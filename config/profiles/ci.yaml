@@ -1,0 +1,22 @@
+# Profile: ci
+# Purpose: GitHub Actions smoke test. No CARLA, no GPU.
+# Only tests that don't require a live CARLA connection are run.
+
+simulation:
+  host: "localhost"
+  timeout_s: 5.0           # fail fast in CI
+
+data_collection:
+  episodes: 1
+  max_frames_per_episode: 10
+
+training:
+  epochs: 1
+  batch_size: 4
+  device: "cpu"
+  num_workers: 0
+  pin_memory: false
+
+logging:
+  level: "WARNING"         # quieter CI output
+  format: "console"

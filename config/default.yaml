@@ -1,0 +1,103 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Master Configuration — CARLA Foundation Driving Demo
+# All values here are defaults. Override using a profile in config/profiles/.
+# Config is loaded by src/utils/config.py via: load_config(profile="local_dev")
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Project metadata ───────────────────────────────────────────────────────────
+project:
+  name: "carla-foundation-driving-demo"
+  version: "0.1.0"
+  phase: 0
+
+# ── CARLA Simulation ──────────────────────────────────────────────────────────
+simulation:
+  host: "localhost"
+  port: 2000
+  timeout_s: 30.0          # seconds to wait for server connection
+  synchronous_mode: true   # always true for deterministic data collection
+  fixed_delta_seconds: 0.05  # simulation timestep (20 Hz)
+  render: true             # disable for headless server
+  map: "Town03"            # CARLA built-in map
+  seed: 42                 # random seed for reproducibility
+  weather: "ClearNoon"     # CARLA WeatherParameters preset
+
+# ── Ego vehicle ───────────────────────────────────────────────────────────────
+vehicle:
+  blueprint: "vehicle.lincoln.mkz_2020"
+  spawn_index: 0           # spawn point index (-1 = random)
+  enable_autopilot: true
+
+# ── Sensors ────────────────────────────────────────────────────────────────────
+sensors:
+  rgb_camera:
+    enabled: true
+    width: 640
+    height: 480
+    fov: 110.0
+    # Transform relative to vehicle center (x forward, z up)
+    transform:
+      x: 1.5
+      y: 0.0
+      z: 2.4
+      pitch: -15.0
+      yaw: 0.0
+      roll: 0.0
+
+  depth_camera:
+    enabled: false           # disabled by default (expensive)
+    width: 640
+    height: 480
+    fov: 110.0
+    transform:
+      x: 1.5
+      y: 0.0
+      z: 2.4
+      pitch: -15.0
+      yaw: 0.0
+      roll: 0.0
+
+  semantic_segmentation:
+    enabled: false
+
+# ── Data Collection ────────────────────────────────────────────────────────────
+data_collection:
+  output_dir: "data/raw"
+  episodes: 5              # number of collection episodes
+  max_frames_per_episode: 2000  # ~100 seconds at 20 Hz
+  save_every_n_frames: 1   # save every frame (1 = all)
+  compress: true           # gzip compression in HDF5
+
+# ── Training ──────────────────────────────────────────────────────────────────
+training:
+  data_dir: "data/processed"
+  output_dir: "outputs/training"
+  model: "bc_cnn_baseline"  # behavioral cloning CNN
+  epochs: 50
+  batch_size: 64
+  learning_rate: 1.0e-4
+  lr_scheduler: "cosine"
+  val_split: 0.15
+  seed: 42
+  device: "auto"           # "auto" | "cpu" | "cuda" | "mps"
+  num_workers: 4
+  pin_memory: true
+  log_every_n_steps: 10
+  checkpoint_every_n_epochs: 5
+
+# ── Evaluation ─────────────────────────────────────────────────────────────────
+evaluation:
+  checkpoint: null          # path to checkpoint; null = latest in output_dir
+  num_episodes: 10
+  max_frames_per_episode: 1000
+  metrics:
+    - route_completion
+    - collision_rate
+    - avg_speed_kmh
+    - smoothness_jerk
+
+# ── Logging ────────────────────────────────────────────────────────────────────
+logging:
+  level: "INFO"             # DEBUG | INFO | WARNING | ERROR
+  format: "console"         # "console" | "json"
+  log_dir: "outputs/logs"

@@ -1,0 +1,107 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "carla-foundation-driving"
+version = "0.1.0"
+description = "End-to-end autonomous driving demo using CARLA simulator"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "CARLA Foundation Driving Team" }]
+
+# Core runtime dependencies (always required)
+dependencies = [
+    "pyyaml>=6.0",
+    "structlog>=24.1",
+    "numpy>=1.26",
+    "click>=8.1",
+    "rich>=13.7",       # beautiful terminal output for diagnose.py
+    "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+# CARLA simulator client — install only when CARLA server is available.
+# The CARLA Python package is not on PyPI; install from the CARLA tarball:
+#   pip install <CARLA_ROOT>/PythonAPI/carla/dist/carla-0.9.15-cp310-*.whl
+# We list it here for documentation; omit from `uv sync` on machines without CARLA.
+sim = [
+    "opencv-python>=4.9",
+    "Pillow>=10.2",
+    "h5py>=3.10",
+]
+
+# ML training dependencies — heavy, CUDA-optional
+ml = [
+    "torch>=2.2",
+    "torchvision>=0.17",
+    "tensorboard>=2.16",
+    "matplotlib>=3.8",
+    "scikit-learn>=1.4",
+    "einops>=0.7",
+]
+
+# Developer tooling
+dev = [
+    "pytest>=8.1",
+    "pytest-cov>=5.0",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "types-PyYAML>=6.0",
+    "pre-commit>=3.7",
+]
+
+# All optional groups bundled
+all = [
+    "carla-foundation-driving[sim,ml,dev]",
+]
+
+[project.scripts]
+diagnose    = "scripts.diagnose:main"
+collect     = "scripts.collect_data:main"
+train       = "scripts.train:main"
+
+# ── Tool configuration ─────────────────────────────────────────────────────────
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+src = ["src", "scripts", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "N",   # pep8-naming
+    "ANN", # type annotations
+    "SIM", # simplify
+    "RUF", # ruff-specific
+]
+ignore = [
+    "ANN401", # typing.Any is required throughout CARLA interface code (no stubs exist)
+    "RUF059", # Unpacked unused vars — intentional in summary unpacking patterns
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+ignore_missing_imports = true   # carla stub not available
+exclude = ["tests/integration/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+markers = [
+    "integration: requires a live CARLA server (deselect with -m 'not integration')",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]

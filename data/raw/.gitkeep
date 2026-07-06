@@ -1,0 +1,2 @@
+# Raw episode recordings are stored here as .hdf5 files.
+# This directory is gitignored — do not commit data files.

@@ -1,0 +1,22 @@
+# Profile: linux_gpu
+# Purpose: Linux training node with NVIDIA GPU.
+# Full-resolution sensors, full training epochs, CUDA device.
+
+simulation:
+  render: false            # headless server
+  fixed_delta_seconds: 0.05  # 20 Hz
+
+data_collection:
+  episodes: 20
+  max_frames_per_episode: 3000
+
+training:
+  epochs: 100
+  batch_size: 128
+  device: "cuda"
+  num_workers: 8
+  pin_memory: true
+
+logging:
+  level: "INFO"
+  format: "json"           # machine-readable for log aggregation
