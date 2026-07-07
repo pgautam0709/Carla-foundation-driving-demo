@@ -1,31 +1,57 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Master Configuration — CARLA Foundation Driving Demo
 # All values here are defaults. Override using a profile in config/profiles/.
-# Config is loaded by src/utils/config.py via: load_config(profile="local_dev")
+# Config is loaded by src/utils/config.py via: load_config(profile="macos_docker")
+#
+# Environment variable overrides (always win over YAML):
+#   CARLA_HOST              → carla_connection.host
+#   CARLA_PORT              → carla_connection.port
+#   CARLA_VERSION           → carla_connection.version
+#   CARLA_PYTHON_API_PATH   → carla_connection.python_api_path
+#   CARLA_DOCKER_IMAGE      → runtime.docker_image (used by start_carla_docker.sh)
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Project metadata ───────────────────────────────────────────────────────────
 project:
   name: "carla-foundation-driving-demo"
   version: "0.1.0"
-  phase: 0
+  phase: 1
+
+# ── CARLA connection ───────────────────────────────────────────────────────────
+# Describes WHERE the CARLA server is, not HOW it was started.
+# All keys can be overridden by environment variables (see header above).
+carla_connection:
+  host: "localhost"           # override: CARLA_HOST env var
+  port: 2000                  # override: CARLA_PORT env var
+  version: "0.9.15"           # override: CARLA_VERSION env var
+  timeout_s: 30.0             # seconds to wait for connection
+  python_api_path: null       # override: CARLA_PYTHON_API_PATH env var
+                              # path to .whl dist dir, e.g.:
+                              # /home/user/carla/PythonAPI/carla/dist/
+
+# ── Runtime context ────────────────────────────────────────────────────────────
+# Describes HOW CARLA is being run — used by launchers and diagnose.py.
+# This repo does not care which mode is active; it only reads carla_connection.
+runtime:
+  mode: "local"               # docker | local | remote
+  docker_image: "carlasim/carla:0.9.15"
+  docker_ports: "2000-2002:2000-2002"
+  docker_extra_args: ""       # e.g. "--gpus all" on Linux GPU hosts
 
 # ── CARLA Simulation ──────────────────────────────────────────────────────────
+# Simulation behaviour settings — independent of where CARLA runs.
 simulation:
-  host: "localhost"
-  port: 2000
-  timeout_s: 30.0          # seconds to wait for server connection
-  synchronous_mode: true   # always true for deterministic data collection
-  fixed_delta_seconds: 0.05  # simulation timestep (20 Hz)
-  render: true             # disable for headless server
-  map: "Town03"            # CARLA built-in map
-  seed: 42                 # random seed for reproducibility
-  weather: "ClearNoon"     # CARLA WeatherParameters preset
+  synchronous_mode: true      # always true for deterministic data collection
+  fixed_delta_seconds: 0.05   # simulation timestep (20 Hz)
+  render: true                # disable for headless server
+  map: "Town03"               # CARLA built-in map
+  seed: 42                    # random seed for reproducibility
+  weather: "ClearNoon"        # CARLA WeatherParameters preset
 
 # ── Ego vehicle ───────────────────────────────────────────────────────────────
 vehicle:
   blueprint: "vehicle.lincoln.mkz_2020"
-  spawn_index: 0           # spawn point index (-1 = random)
+  spawn_index: 0              # spawn point index (-1 = random)
   enable_autopilot: true
 
 # ── Sensors ────────────────────────────────────────────────────────────────────
@@ -45,7 +71,7 @@ sensors:
       roll: 0.0
 
   depth_camera:
-    enabled: false           # disabled by default (expensive)
+    enabled: false            # disabled by default (expensive)
     width: 640
     height: 480
     fov: 110.0
@@ -63,10 +89,10 @@ sensors:
 # ── Data Collection ────────────────────────────────────────────────────────────
 data_collection:
   output_dir: "data/raw"
-  episodes: 5              # number of collection episodes
+  episodes: 5               # number of collection episodes
   max_frames_per_episode: 2000  # ~100 seconds at 20 Hz
-  save_every_n_frames: 1   # save every frame (1 = all)
-  compress: true           # gzip compression in HDF5
+  save_every_n_frames: 1    # save every frame (1 = all)
+  compress: true            # gzip compression in HDF5
 
 # ── Training ──────────────────────────────────────────────────────────────────
 training:
@@ -79,7 +105,7 @@ training:
   lr_scheduler: "cosine"
   val_split: 0.15
   seed: 42
-  device: "auto"           # "auto" | "cpu" | "cuda" | "mps"
+  device: "auto"            # "auto" | "cpu" | "cuda" | "mps"
   num_workers: 4
   pin_memory: true
   log_every_n_steps: 10
@@ -87,7 +113,7 @@ training:
 
 # ── Evaluation ─────────────────────────────────────────────────────────────────
 evaluation:
-  checkpoint: null          # path to checkpoint; null = latest in output_dir
+  checkpoint: null           # path to checkpoint; null = latest in output_dir
   num_episodes: 10
   max_frames_per_episode: 1000
   metrics:
@@ -98,6 +124,6 @@ evaluation:
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 logging:
-  level: "INFO"             # DEBUG | INFO | WARNING | ERROR
-  format: "console"         # "console" | "json"
+  level: "INFO"              # DEBUG | INFO | WARNING | ERROR
+  format: "console"          # "console" | "json"
   log_dir: "outputs/logs"

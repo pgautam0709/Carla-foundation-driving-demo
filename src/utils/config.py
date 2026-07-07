@@ -3,19 +3,28 @@ src/utils/config.py — Configuration loader with deep-merge profile support.
 
 Usage::
 
-    from src.utils.config import load_config
+    from src.utils.config import load_config, get_nested
 
-    cfg = load_config()                          # default only
-    cfg = load_config(profile="local_dev")       # default + profile override
-    cfg = load_config(profile="linux_gpu")
+    cfg = load_config()                           # default only
+    cfg = load_config(profile="macos_docker")     # default + profile override
+    cfg = load_config(profile="remote_carla")
 
-    # Access nested keys
-    host = cfg["simulation"]["host"]
+    # CARLA connection — also overridable by env vars CARLA_HOST / CARLA_PORT
+    host = get_nested(cfg, "carla_connection", "host", default="localhost")
+    port = get_nested(cfg, "carla_connection", "port", default=2000)
+
+Environment variable overrides (applied automatically by load_config):
+    CARLA_HOST              → cfg["carla_connection"]["host"]
+    CARLA_PORT              → cfg["carla_connection"]["port"]  (coerced to int)
+    CARLA_VERSION           → cfg["carla_connection"]["version"]
+    CARLA_PYTHON_API_PATH   → cfg["carla_connection"]["python_api_path"]
 """
 
 from __future__ import annotations
 
+import contextlib
 import copy
+import os
 from pathlib import Path
 from typing import Any
 
@@ -44,10 +53,11 @@ def load_config(
         1. ``config/default.yaml``  (or *base_path* if provided)
         2. ``config/profiles/<profile>.yaml``  (if *profile* is set)
         3. ``profile_path``  (if provided directly)
+        4. Environment variable overrides (CARLA_HOST, CARLA_PORT, …)
 
     Args:
         base_path: Explicit path to a base YAML file.
-        profile: Name of a built-in profile (e.g. ``"local_dev"``).
+        profile: Name of a built-in profile (e.g. ``"macos_docker"``).
         profile_path: Explicit path to a profile YAML override file.
 
     Returns:
@@ -74,7 +84,48 @@ def load_config(
         override = _load_yaml(Path(profile_path))
         cfg = _deep_merge(cfg, override)
 
+    # 3. Apply environment variable overrides (always win over YAML)
+    cfg = apply_env_overrides(cfg)
+
     return cfg
+
+
+def apply_env_overrides(cfg: ConfigDict) -> ConfigDict:
+    """Apply CARLA_* environment variables into cfg["carla_connection"].
+
+    Environment variables take precedence over all YAML values. This is
+    the standard 12-factor approach: config files carry defaults, the
+    deployment environment supplies the runtime address.
+
+    Supported variables:
+        CARLA_HOST            → carla_connection.host
+        CARLA_PORT            → carla_connection.port  (coerced to int)
+        CARLA_VERSION         → carla_connection.version
+        CARLA_PYTHON_API_PATH → carla_connection.python_api_path
+
+    Args:
+        cfg: Configuration dict produced by load_config or deep_merge.
+
+    Returns:
+        New dict with env var overrides applied (input is not mutated).
+    """
+    result = copy.deepcopy(cfg)
+    conn: ConfigDict = result.setdefault("carla_connection", {})
+
+    if host := os.environ.get("CARLA_HOST"):
+        conn["host"] = host
+
+    if port_str := os.environ.get("CARLA_PORT"):
+        with contextlib.suppress(ValueError):
+            conn["port"] = int(port_str)
+
+    if version := os.environ.get("CARLA_VERSION"):
+        conn["version"] = version
+
+    if api_path := os.environ.get("CARLA_PYTHON_API_PATH"):
+        conn["python_api_path"] = api_path
+
+    return result
 
 
 def get_nested(cfg: ConfigDict, *keys: str, default: Any = None) -> Any:
@@ -82,7 +133,16 @@ def get_nested(cfg: ConfigDict, *keys: str, default: Any = None) -> Any:
 
     Example::
 
-        host = get_nested(cfg, "simulation", "host", default="localhost")
+        host = get_nested(cfg, "carla_connection", "host", default="localhost")
+        port = get_nested(cfg, "carla_connection", "port", default=2000)
+
+    Args:
+        cfg: The configuration dict.
+        *keys: Sequence of nested keys to traverse.
+        default: Value to return if any key is missing.
+
+    Returns:
+        The value at the nested key path, or *default* if not found.
     """
     current: Any = cfg
     for key in keys:
@@ -97,7 +157,17 @@ def get_nested(cfg: ConfigDict, *keys: str, default: Any = None) -> Any:
 # ── Internal helpers ───────────────────────────────────────────────────────────
 
 def _load_yaml(path: Path) -> ConfigDict:
-    """Load a YAML file and return its contents as a dict."""
+    """Load a YAML file and return its contents as a dict.
+
+    Args:
+        path: Path to the YAML file.
+
+    Returns:
+        Parsed YAML as a dict. Empty dict for empty/null files.
+
+    Raises:
+        FileNotFoundError: If *path* does not exist.
+    """
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
     with path.open("r", encoding="utf-8") as fh:
@@ -106,7 +176,15 @@ def _load_yaml(path: Path) -> ConfigDict:
 
 
 def _deep_merge(base: ConfigDict, override: ConfigDict) -> ConfigDict:
-    """Recursively merge *override* into *base*. Returns a new dict."""
+    """Recursively merge *override* into *base*. Returns a new dict.
+
+    Args:
+        base: The base configuration dict.
+        override: Values that take precedence over *base*.
+
+    Returns:
+        Merged dict. Neither input is mutated.
+    """
     result = copy.deepcopy(base)
     for key, value in override.items():
         if key in result and isinstance(result[key], dict) and isinstance(value, dict):

@@ -1,0 +1,31 @@
+# Profile: windows_local
+# Purpose: Windows workstation with CARLA installed natively.
+#
+# Setup:
+#   powershell -ExecutionPolicy Bypass -File scripts\start_carla_windows.ps1 `
+#       -CARLA_ROOT C:\CARLA\CARLA_0.9.15
+#   set CARLA_HOST=127.0.0.1
+#   set PROFILE=windows_local
+#   make smoke
+
+runtime:
+  mode: "local"
+
+carla_connection:
+  host: "127.0.0.1"
+  port: 2000
+  timeout_s: 45.0             # Windows CARLA startup takes ~30s
+
+simulation:
+  render: true                # Windows has a display; enable for visual debugging
+  fixed_delta_seconds: 0.05   # 20 Hz — native Windows runs full speed
+
+training:
+  device: "cuda"
+  num_workers: 4
+  pin_memory: true
+  epochs: 50
+
+logging:
+  level: "INFO"
+  format: "console"

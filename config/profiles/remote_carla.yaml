@@ -1,0 +1,38 @@
+# Profile: remote_carla
+# Purpose: CARLA is running on a separate machine (LAN or cloud).
+#
+# The host address below is a placeholder — always override with:
+#   CARLA_HOST=<server-ip> make smoke
+#   CARLA_HOST=<server-ip> make collect
+#
+# Setup (on the remote server):
+#   ./CarlaUE4.sh -RenderOffScreen -carla-port=2000
+#   # Ensure port 2000-2002 is open in the firewall
+#
+# On the local machine:
+#   CARLA_HOST=<server-ip> PROFILE=remote_carla make smoke
+
+runtime:
+  mode: "remote"
+
+carla_connection:
+  host: "192.168.1.100"      # placeholder — override with CARLA_HOST env var
+  port: 2000
+  timeout_s: 60.0             # allow more time for network latency
+
+simulation:
+  render: false               # remote server is headless
+  fixed_delta_seconds: 0.05  # 20 Hz
+
+data_collection:
+  episodes: 10
+  max_frames_per_episode: 2000
+
+training:
+  device: "auto"
+  num_workers: 4
+  pin_memory: true
+
+logging:
+  level: "INFO"
+  format: "json"

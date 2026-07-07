@@ -1,0 +1,33 @@
+# Profile: linux_local
+# Purpose: Linux workstation or server with CARLA installed natively + GPU.
+#
+# Setup:
+#   ./CarlaUE4.sh -RenderOffScreen -carla-port=2000
+#   PROFILE=linux_local make smoke
+#   PROFILE=linux_local make collect
+
+runtime:
+  mode: "local"
+
+carla_connection:
+  host: "127.0.0.1"
+  port: 2000
+  timeout_s: 30.0
+
+simulation:
+  render: false               # headless for data collection
+  fixed_delta_seconds: 0.05  # 20 Hz
+
+data_collection:
+  episodes: 10
+  max_frames_per_episode: 2000
+
+training:
+  device: "cuda"
+  num_workers: 8
+  pin_memory: true
+  epochs: 50
+
+logging:
+  level: "INFO"
+  format: "json"              # JSON for log aggregation on servers

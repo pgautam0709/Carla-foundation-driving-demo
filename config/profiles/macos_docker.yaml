@@ -1,0 +1,41 @@
+# Profile: macos_docker
+# Purpose: macOS development machine running CARLA via Docker.
+#
+# Limitations (Apple Silicon):
+#   The carlasim/carla image is amd64-only. On arm64 Macs it runs under
+#   Rosetta 2 emulation. Use this profile for connectivity testing only.
+#   For data collection, switch to remote_carla and use a Linux GPU node.
+#
+# Setup:
+#   make carla-docker          # start CARLA container
+#   CARLA_HOST=127.0.0.1 PROFILE=macos_docker make smoke
+#   CARLA_HOST=127.0.0.1 PROFILE=macos_docker make collect
+
+runtime:
+  mode: "docker"
+  docker_image: "carlasim/carla:0.9.15"
+  docker_ports: "2000-2002:2000-2002"
+  docker_extra_args: ""   # --platform linux/amd64 added automatically by script
+
+carla_connection:
+  host: "127.0.0.1"      # Docker exposes on loopback; prefer 127.0.0.1 over localhost
+  port: 2000
+  timeout_s: 60.0         # Docker startup takes longer than native
+
+simulation:
+  render: false           # -RenderOffScreen in Docker — no display available
+  fixed_delta_seconds: 0.1  # 10 Hz — emulation is slower; 20 Hz may not be stable
+
+data_collection:
+  episodes: 2             # small collection runs on macOS
+  max_frames_per_episode: 200
+
+training:
+  device: "mps"           # Apple Silicon GPU via Metal Performance Shaders
+  num_workers: 2          # fewer workers — macOS fork limitations
+  pin_memory: false       # MPS does not support pinned memory
+  epochs: 3               # fast iteration
+
+logging:
+  level: "DEBUG"
+  format: "console"

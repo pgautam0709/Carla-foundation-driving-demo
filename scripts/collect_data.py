@@ -138,19 +138,22 @@ def main(
 
     n_episodes  = cfg["data_collection"]["episodes"]
     sim_cfg     = cfg["simulation"]
+    conn_cfg    = cfg.get("carla_connection", {})
 
     log.info(
         "collection.start",
         episodes=n_episodes,
         map=sim_cfg["map"],
+        host=conn_cfg.get("host", "localhost"),
+        port=conn_cfg.get("port", 2000),
         profile=profile,
     )
 
     try:
         with CARLAClient(
-            host=sim_cfg["host"],
-            port=sim_cfg["port"],
-            timeout_s=sim_cfg["timeout_s"],
+            host=conn_cfg.get("host", "localhost"),
+            port=conn_cfg.get("port", 2000),
+            timeout_s=conn_cfg.get("timeout_s", 30.0),
             synchronous=sim_cfg["synchronous_mode"],
             fixed_delta_seconds=sim_cfg["fixed_delta_seconds"],
             render=sim_cfg["render"],
