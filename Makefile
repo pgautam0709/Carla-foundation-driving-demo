@@ -15,10 +15,17 @@ PROFILE     ?= local_dev
 CARLA_HOST  ?= localhost
 CARLA_PORT  ?= 2000
 
+# Phase 2 — episode directory for validate-episode.
+# Defaults to the most recently created episode, or set explicitly:
+#   make validate-episode EPISODE_DIR=data/raw/episodes/episode_20260707_...
+_LATEST_EP  := $(shell ls -dt data/raw/episodes/*/ 2>/dev/null | head -1)
+EPISODE_DIR ?= $(patsubst %/,%,$(_LATEST_EP))
+
 # ── Phony targets ──────────────────────────────────────────────────────────────
 .PHONY: help setup diagnose lint lint-fix type-check test test-all \
         smoke carla-docker carla-windows-help \
-        collect train clean
+        collect collect-dry-run validate-episode \
+        train clean
 
 help: ## Show this help message
 	@echo ""
@@ -106,8 +113,21 @@ carla-windows-help: ## Print Windows CARLA startup instructions
 
 # ── Data pipeline ─────────────────────────────────────────────────────────────
 
-collect: ## Run data collection (requires CARLA server)
+collect: ## Run legacy HDF5 data collection (requires CARLA server)
 	$(PYTHON) scripts/collect_data.py --config $(CONFIG) --profile $(PROFILE)
+
+collect-dry-run: ## Generate a synthetic expert episode (no CARLA required)
+	$(PYTHON) scripts/collect_expert_episode.py \
+		--profile $(PROFILE) \
+		--output-dir data/raw/episodes \
+		--dry-run
+
+validate-episode: ## Validate an episode directory (set EPISODE_DIR=<path>)
+	@if [ -z "$(EPISODE_DIR)" ]; then \
+		echo "[FAIL] No episode found. Run: make collect-dry-run first"; \
+		exit 1; \
+	fi
+	$(PYTHON) scripts/validate_episode.py $(EPISODE_DIR) --verbose
 
 train: ## Run model training (requires collected data)
 	$(PYTHON) scripts/train.py --config $(CONFIG) --profile $(PROFILE)

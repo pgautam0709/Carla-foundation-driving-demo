@@ -15,7 +15,7 @@
 project:
   name: "carla-foundation-driving-demo"
   version: "0.1.0"
-  phase: 1
+  phase: 2
 
 # ── CARLA connection ───────────────────────────────────────────────────────────
 # Describes WHERE the CARLA server is, not HOW it was started.
@@ -93,6 +93,21 @@ data_collection:
   max_frames_per_episode: 2000  # ~100 seconds at 20 Hz
   save_every_n_frames: 1    # save every frame (1 = all)
   compress: true            # gzip compression in HDF5
+
+# ── Expert Data Collection (Phase 2) ──────────────────────────────────────────
+# Used by scripts/collect_expert_episode.py and make collect-dry-run.
+# This is separate from legacy HDF5 data_collection above.
+expert_collection:
+  output_dir: "data/raw/episodes"  # episode directories written here
+  town: "Town03"                   # default map (overridden by --town)
+  route: "routeA"                  # default route label
+  ticks: 500                       # default tick count (~25s at 20 Hz)
+  camera:
+    width: 640
+    height: 480
+    fov: 110.0
+  ego_vehicle: "vehicle.lincoln.mkz_2020"
+  fixed_delta_seconds: 0.05        # must match simulation.fixed_delta_seconds
 
 # ── Training ──────────────────────────────────────────────────────────────────
 training:

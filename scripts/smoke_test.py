@@ -99,7 +99,7 @@ def main(
     resolved_map  = map_name or get_nested(cfg, "simulation", "map", default="Town03")
     carla_version = conn.get("version", "0.9.15")
 
-    _print_header(resolved_host, resolved_port, profile, resolved_map, ticks)
+    _print_header(resolved_host, resolved_port, profile, resolved_map, ticks, carla_version)
 
     # ── Guard: carla package available? ──────────────────────────────────────
     try:
@@ -128,6 +128,7 @@ def main(
             timeout=timeout,
             map_name=resolved_map,
             ticks=ticks,
+            expected_version=carla_version,
         )
     except _CARLAConnectionError:
         click.echo(_fail(f"Cannot connect to CARLA at {resolved_host}:{resolved_port}"), err=True)
@@ -156,6 +157,7 @@ def _run_smoke_test(
     timeout: float,
     map_name: str,
     ticks: int,
+    expected_version: str = "0.9.15",
 ) -> None:
     """Connect to CARLA, spawn a vehicle, run ticks, and report results.
 
@@ -166,9 +168,10 @@ def _run_smoke_test(
         timeout: Connection timeout in seconds.
         map_name: CARLA map name to load.
         ticks: Number of synchronous ticks to run.
+        expected_version: Expected CARLA version from config (for mismatch check).
 
     Raises:
-        _CARLAConnectionFailed: If the server is not reachable.
+        _CARLAConnectionError: If the server is not reachable.
         RuntimeError: If any other unexpected error occurs.
     """
     connect_start = time.monotonic()
@@ -182,20 +185,35 @@ def _run_smoke_test(
         ) as client:
             connect_ms = (time.monotonic() - connect_start) * 1000
             server_version = client.client.get_server_version()
+            client_version = client.client.get_client_version()
             click.echo(f"  {_ok(f'Connected  {connect_ms:.0f}ms  server={server_version}')}")
 
-            # Load map
-            world = client.world
-            current_map = world.get_map().name.split("/")[-1]
+            # ── Version mismatch check ────────────────────────────────────────
+            if server_version != expected_version:
+                click.echo(
+                    f"  {YELLOW('[WARN]')} Server version {server_version!r} != "
+                    f"expected {expected_version!r} (from config carla_connection.version)"
+                )
+                click.echo(
+                    "         API/server mismatch may cause runtime errors. "
+                    "Update carla_connection.version or reinstall the wheel."
+                )
+            if client_version != server_version:
+                click.echo(
+                    f"  {YELLOW('[WARN]')} Python wheel version {client_version!r} != "
+                    f"server {server_version!r}"
+                )
+
+            # Load map via client.load_map() so settings are re-applied correctly
+            current_map = client.world.get_map().name.split("/")[-1]
             if current_map != map_name:
                 click.echo(f"  Loading map: {map_name} ...")
-                client.client.load_world(map_name)
-                world = client.world
-            click.echo(f"  {_ok(f'Map: {map_name}')}")
-
-            # Spawn ego vehicle
+                client.load_map(map_name)
+            world = client.world
             bp_lib = world.get_blueprint_library()
+            click.echo(f"  {_ok(f'Map: {map_name}')}")
             vehicle_bps = bp_lib.filter("vehicle.lincoln.*")
+
             if not vehicle_bps:
                 vehicle_bps = bp_lib.filter("vehicle.*")
             vehicle_bp = vehicle_bps[0]
@@ -228,7 +246,8 @@ def _run_smoke_test(
 
 
 def _print_header(
-    host: str, port: int, profile: str, map_name: str, ticks: int
+    host: str, port: int, profile: str, map_name: str, ticks: int,
+    expected_version: str = "0.9.15",
 ) -> None:
     width = 60
     print()
@@ -239,8 +258,10 @@ def _print_header(
     print(DIM(f"  Profile : {profile}"))
     print(DIM(f"  Map     : {map_name}"))
     print(DIM(f"  Ticks   : {ticks}"))
+    print(DIM(f"  CARLA   : expected v{expected_version}"))
     print(BOLD("─" * width))
     print()
+
 
 
 def _print_results(ticks: int, duration: float, hz: float, server_version: str) -> None:
