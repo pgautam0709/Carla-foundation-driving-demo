@@ -21,10 +21,18 @@ CARLA_PORT  ?= 2000
 _LATEST_EP  := $(shell ls -dt data/raw/episodes/*/ 2>/dev/null | head -1)
 EPISODE_DIR ?= $(patsubst %/,%,$(_LATEST_EP))
 
+# Phase 3 — versioned dataset directory for inspect-dataset.
+# build-dataset writes each build to data/processed/datasets/<dataset_id>/.
+# Defaults to the most recently built dataset, or set explicitly:
+#   make inspect-dataset DATASET_DIR=data/processed/datasets/dataset_20260707_...
+_LATEST_DATASET := $(shell ls -dt data/processed/datasets/*/ 2>/dev/null | head -1)
+DATASET_DIR ?= $(patsubst %/,%,$(_LATEST_DATASET))
+
 # ── Phony targets ──────────────────────────────────────────────────────────────
 .PHONY: help setup diagnose lint lint-fix type-check test test-all \
         smoke carla-docker carla-windows-help \
         collect collect-dry-run validate-episode \
+        build-dataset inspect-dataset dataset-dry-run \
         train clean
 
 help: ## Show this help message
@@ -128,6 +136,23 @@ validate-episode: ## Validate an episode directory (set EPISODE_DIR=<path>)
 		exit 1; \
 	fi
 	$(PYTHON) scripts/validate_episode.py $(EPISODE_DIR) --verbose
+
+build-dataset: ## Build a new versioned Phase 3 dataset from collected Phase 2 episodes (no CARLA required)
+	$(PYTHON) scripts/build_dataset.py --profile $(PROFILE)
+
+inspect-dataset: ## Print a human-readable summary of a dataset (set DATASET_DIR=<path>; default: most recent)
+	$(PYTHON) scripts/inspect_dataset.py --profile $(PROFILE) $(if $(DATASET_DIR),--dataset-dir $(DATASET_DIR))
+
+dataset-dry-run: ## End-to-end Phase 3 smoke test: collect + build + inspect (no CARLA required)
+	$(PYTHON) scripts/collect_expert_episode.py \
+		--profile $(PROFILE) \
+		--output-dir data/raw/episodes \
+		--ticks 20 \
+		--dry-run
+	$(PYTHON) scripts/build_dataset.py --profile $(PROFILE) \
+		--dataset-id dry_run_dataset
+	$(PYTHON) scripts/inspect_dataset.py --profile $(PROFILE) \
+		--dataset-dir data/processed/datasets/dry_run_dataset --verbose
 
 train: ## Run model training (requires collected data)
 	$(PYTHON) scripts/train.py --config $(CONFIG) --profile $(PROFILE)

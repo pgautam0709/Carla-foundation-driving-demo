@@ -27,20 +27,20 @@ graph TD
         CKPT[(outputs/training/*.ckpt)]
     end
 
-    subgraph TRAINING["Training Pipeline (Phase 3)"]
+    subgraph TRAINING["Training Pipeline (Phase 4)"]
         DS[Dataset Loader]
         MODEL[BC-CNN Model\nsrc/models/]
         LOOP[Training Loop\nsrc/training/]
         TB[TensorBoard]
     end
 
-    subgraph EVAL["Evaluation (Phase 4)"]
+    subgraph EVAL["Evaluation (Phase 5)"]
         EH[Evaluation Harness\nsrc/evaluation/]
         METRICS[Metrics:\nroute_completion\ncollision_rate\nspeed]
         XAI[Explainability:\nAttention Maps]
     end
 
-    subgraph DEPLOY["Deployment (Phase 5)"]
+    subgraph DEPLOY["Deployment (Phase 6)"]
         ONNX[ONNX Export]
         TRT[TensorRT]
     end

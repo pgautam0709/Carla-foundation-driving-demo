@@ -7,12 +7,15 @@ Read this file before making any changes.
 
 ## 1. Project Phase Awareness
 
-This project progresses through phases (0–5). **Do not implement features from a future phase** unless explicitly instructed. Check `docs/PHASES.md` to understand what is in scope.
+This project progresses through phases (0–6). **Do not implement features from a future phase** unless explicitly instructed. Check `docs/PHASES.md` to understand what is in scope.
 
-- Phase 0 (current): Scaffold, config, diagnostics, docs — **no model weights, no training loop**
+- Phase 0: Scaffold, config, diagnostics, docs — no model weights, no training loop
 - Phase 1: Simulation bootstrap
 - Phase 2: Data collection
-- Phase 3+: Training, evaluation, deployment
+- Phase 3 (current): Dataset engineering and hardening — indexing, validation, splits, quality reporting. **No model weights, no training loop, no PyTorch `Dataset` here.**
+- Phase 4: Model training (BC-CNN, PyTorch `Dataset`, trainer, `train.py`)
+- Phase 5: Evaluation and explainability
+- Phase 6: Deployment packaging
 
 ---
 

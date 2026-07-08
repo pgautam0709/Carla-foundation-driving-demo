@@ -15,7 +15,7 @@
 project:
   name: "carla-foundation-driving-demo"
   version: "0.1.0"
-  phase: 2
+  phase: 3
 
 # ── CARLA connection ───────────────────────────────────────────────────────────
 # Describes WHERE the CARLA server is, not HOW it was started.
@@ -108,6 +108,27 @@ expert_collection:
     fov: 110.0
   ego_vehicle: "vehicle.lincoln.mkz_2020"
   fixed_delta_seconds: 0.05        # must match simulation.fixed_delta_seconds
+
+# ── Dataset Engineering (Phase 3) ─────────────────────────────────────────────
+# Used by scripts/build_dataset.py, scripts/inspect_dataset.py, and
+# make build-dataset / inspect-dataset / dataset-dry-run.
+# Reads Phase 2 episode directories and produces a flat, indexed dataset
+# ready for a future PyTorch Dataset (not implemented in this phase).
+dataset_engineering:
+  raw_episodes_dir: "data/raw/episodes"  # source of Phase 2 episodes
+  datasets_dir: "data/processed/datasets"  # parent dir; each build gets its own <dataset_id>/ subdirectory
+  dataset_id: null                       # null = auto-generate a timestamped ID at build time
+  output_dir: null                       # explicit full output path override (bypasses
+                                          # datasets_dir/dataset_id when set) — null = use versioned default
+  require_valid: true                    # drop episodes that fail EpisodeValidator
+  allow_partial_alignment: false         # strict by default: drop misaligned episodes
+                                          # rather than silently truncating them
+  min_episode_ticks: 1                   # episodes with fewer usable ticks are dropped
+  split_seed: 42                         # deterministic split assignment seed
+  split_ratios:
+    train: 0.8
+    val: 0.1
+    test: 0.1
 
 # ── Training ──────────────────────────────────────────────────────────────────
 training:

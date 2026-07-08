@@ -2,7 +2,7 @@
 
 ## Overview
 
-The project is structured as six phases, each building on the previous. Each phase produces concrete deliverables that a reviewer can inspect and verify independently.
+The project is structured as seven phases, each building on the previous. Each phase produces concrete deliverables that a reviewer can inspect and verify independently.
 
 ---
 
@@ -13,9 +13,13 @@ The project is structured as six phases, each building on the previous. Each pha
 | **0** | Platform Scaffold | ✅ Complete | Diagnostics, config, docs, test skeleton |
 | **1** | Simulation Bootstrap | ✅ Complete | Portable runtime, smoke test, 4 profiles, 58 unit tests |
 | **2** | Data Collection | ✅ Complete | Expert episode pipeline: PNG frames + JSONL, 121 unit tests |
-| **3** | Model Training | 🔲 Planned | Trained BC-CNN, TensorBoard logs |
-| **4** | Evaluation & XAI | 🔲 Planned | Closed-loop metrics, attention maps |
-| **5** | Deployment Packaging | 🔲 Planned | ONNX + TensorRT export, inference script |
+| **3** | Dataset Engineering | 🟡 In Progress | 3a Dataset Engineering ✅ · 3b Dataset Hardening 🔲 Planned |
+| **4** | Model Training | 🔲 Planned | Trained BC-CNN, TensorBoard logs |
+| **5** | Evaluation & XAI | 🔲 Planned | Closed-loop metrics, attention maps |
+| **6** | Deployment Packaging | 🔲 Planned | ONNX + TensorRT export, inference script |
+
+**Note:** Phase 3 is dataset engineering and hardening only — it never
+produces a trained model. Behavioural cloning training is entirely Phase 4.
 
 ---
 
@@ -135,13 +139,79 @@ data/raw/episodes/<episode_id>/
 
 ---
 
-## Phase 3 — Model Training
+## Phase 3 — Dataset Engineering
+
+**Goal:** Turn Phase 2's episode directories into a deterministic,
+quality-checked, indexed dataset. **This phase does not train a model** —
+no PyTorch, no BC-CNN, no trainer, no `train.py`. That is Phase 4.
+
+### Phase 3a — Dataset Engineering
+
+**Status: ✅ Complete**
+
+**Goal:** Turn a directory of Phase 2 episodes — of varying length and
+quality — into one deterministic, quality-checked dataset that training can
+trust, without writing any training code yet.
+
+**Deliverables:**
+- [`src/data/dataset_schemas.py`](../src/data/dataset_schemas.py) — `EpisodeIndexEntry`, `SampleRecord`, `DatasetStatistics`, `QualityReport`, `DatasetManifest` (schema v1.0)
+- [`src/data/dataset_discovery.py`](../src/data/dataset_discovery.py) — episode directory discovery
+- [`src/data/dataset_alignment.py`](../src/data/dataset_alignment.py) — frame/control/telemetry alignment checking with truncation to a usable prefix
+- [`src/data/dataset_splits.py`](../src/data/dataset_splits.py) — deterministic per-episode train/val/test split assignment
+- [`src/data/dataset_statistics.py`](../src/data/dataset_statistics.py) — aggregate signal statistics
+- [`src/data/dataset_builder.py`](../src/data/dataset_builder.py) — orchestrates the full build
+- [`scripts/build_dataset.py`](../scripts/build_dataset.py) / [`scripts/inspect_dataset.py`](../scripts/inspect_dataset.py) — CLIs
+- `config/default.yaml` — new `dataset_engineering:` section
+- `Makefile` — `make build-dataset`, `make inspect-dataset`, `make dataset-dry-run`
+- [`docs/PHASE3_DATASET_ENGINEERING.md`](PHASE3_DATASET_ENGINEERING.md) — full artifact reference and design decisions
+- [`docs/ADR/0002-dataset-engineering-design.md`](ADR/0002-dataset-engineering-design.md)
+- [`tests/unit/test_dataset_engineering.py`](../tests/unit/test_dataset_engineering.py) — 54 new unit tests (8 test classes)
+
+**Verified Results:**
+
+| Check | Result |
+|-------|--------|
+| `make lint` | ✅ All checks passed |
+| `make type-check` | ✅ No issues in the new modules |
+| `make test` | ✅ **175/175 unit tests pass** (no CARLA required) |
+| `make dataset-dry-run` | ✅ Generates an episode, builds the dataset, prints the summary |
+
+**Success Criteria:**
+- ✅ `make build-dataset` produces a new versioned directory (`data/processed/datasets/<dataset_id>/`) containing `dataset_manifest.json`, `episodes_index.jsonl`, `samples_index.jsonl`, `stats.json`, `quality_report.json`, and `splits/{train,val,test}.jsonl` from any set of Phase 2 episodes, without overwriting prior builds
+- ✅ Alignment is strict by default — a misaligned episode is excluded, not silently truncated; `--allow-partial-alignment` opts into truncation, and either way the outcome is recorded in the quality report
+- ✅ Splits are assigned per episode (not per sample) via a deterministic batch algorithm; rebuilding the same episodes with the same seed reproduces identical split assignments, and `train` is never left empty when samples exist, even for a 1-2 episode dataset
+- ✅ Misaligned, invalid, or split-coverage issues are reported in the quality report and surfaced by `inspect_dataset.py`, not silently dropped or included
+- ✅ No CARLA, Docker, GPU, or PyTorch dependency anywhere in this layer
+- ✅ Phase 0, Phase 1, and Phase 2 behavior is unchanged
+
+### Phase 3b — Dataset Hardening
+
+**Status: 🔲 Planned**
+
+**Goal:** Improve dataset quality and trustworthiness further — **still no
+model training code**. Candidate scope (to be refined before starting):
+- Outlier/anomaly detection on control and telemetry signals (e.g. steering
+  spikes, stuck-throttle episodes)
+- Duplicate or near-duplicate frame detection across episodes
+- Class-balance reporting for steering angle distribution, to inform
+  (but not perform) future sampling strategy
+- `validate_episode.py --fix-manifest` follow-through: writing back
+  `validation_status` after validation
+
+**Explicitly out of scope for 3b:** anything that trains, evaluates, or
+exports a model. That work is Phase 4 onward.
+
+---
+
+## Phase 4 — Model Training
 
 **Goal:** Train a behavioural cloning model that maps front-camera images to vehicle controls.
 
+**Status: 🔲 Planned**
+
 **Deliverables:**
 - `src/models/bc_cnn.py` — BC-CNN architecture (ResNet backbone + MLP head)
-- `src/data/dataset.py` — PyTorch Dataset/DataLoader for HDF5 episodes
+- `src/data/dataset.py` — PyTorch `Dataset`/`DataLoader` reading `splits/{train,val,test}.jsonl` (produced by Phase 3)
 - `src/training/trainer.py` — training loop with validation, checkpointing, TensorBoard
 - `scripts/train.py` — fully implemented training entry point
 - Trained checkpoint achieving < 0.05 mean absolute error on steering
@@ -153,7 +223,7 @@ data/raw/episodes/<episode_id>/
 
 ---
 
-## Phase 4 — Evaluation & Explainability
+## Phase 5 — Evaluation & Explainability
 
 **Goal:** Quantitatively evaluate the model in closed-loop simulation and explain its decisions.
 
@@ -170,7 +240,7 @@ data/raw/episodes/<episode_id>/
 
 ---
 
-## Phase 5 — Deployment Packaging
+## Phase 6 — Deployment Packaging
 
 **Goal:** Package the trained model for inference-time deployment.
 
