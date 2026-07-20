@@ -92,7 +92,7 @@ python scripts/validate_episode.py data/raw/episodes/episode_... --fix-manifest
   "issues": [
     {"episode_id": "episode_stuck", "severity": "warning", "message": "stuck-throttle: 45 consecutive ticks with throttle >= 0.9 and speed <= 1.0 kph"},
     {"episode_id": "episode_spike", "severity": "warning", "message": "1 steering spike(s) exceeding |Δsteer| > 0.6 (max observed 0.90)"},
-    {"episode_id": "<dataset>", "severity": "warning", "message": "5 samples share identical frame content across 2 episode(s): episode_a_000000, episode_a_000001, episode_b_000000, episode_b_000001, episode_b_000002 (+1 more)"}
+    {"episode_id": "<dataset>", "severity": "warning", "message": "5 samples share an exact duplicate frame (byte-identical content) across 2 episode(s): episode_a_000000, episode_a_000001, episode_b_000000, episode_b_000001, episode_b_000002 (+1 more)"}
   ]
 }
 ```
@@ -236,6 +236,13 @@ what writes the outcome back.
   might trip the steering-spike check more often than a highway route at
   the same threshold. Thresholds are config/CLI-tunable per build to
   compensate.
+
+**Future enhancement (not implemented):** Perceptual near-duplicate
+detection can be added later using image hashing (e.g. average/difference
+hash) or embeddings, but Phase 3b intentionally avoids image-processing
+dependencies. Everywhere in this document, in code, and in tool output,
+"duplicate" for this feature means **exact, byte-for-byte identical** frame
+content — never a similarity or perceptual match.
 
 **Extension points for Phase 4 (model training):** none of this phase's
 output is consumed anywhere yet — `stats.json`'s histogram and

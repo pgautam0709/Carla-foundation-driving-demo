@@ -259,8 +259,9 @@ def build_dataset(
             episode_id=DATASET_LEVEL_ISSUE if cross_episode else group.episode_ids[0],
             severity="warning",
             message=(
-                f"{len(group.sample_ids)} samples share identical frame content"
-                f" across {len(group.episode_ids)} episode(s): {preview}{suffix}"
+                f"{len(group.sample_ids)} samples share an exact duplicate frame"
+                f" (byte-identical content) across {len(group.episode_ids)} episode(s):"
+                f" {preview}{suffix}"
             ),
         ))
 

@@ -197,7 +197,7 @@ def main(
                f"  test={split_counts['test']}")
     if resolved_outlier_detection or resolved_duplicate_detection:
         click.echo(f"     Hardening: {quality['episodes_with_outliers']} episode(s) with outliers"
-                   f"  ·  {quality['duplicate_frame_groups']} duplicate frame group(s)")
+                   f"  ·  {quality['duplicate_frame_groups']} exact-duplicate frame group(s)")
 
     if manifest.episode_count_excluded:
         click.echo(

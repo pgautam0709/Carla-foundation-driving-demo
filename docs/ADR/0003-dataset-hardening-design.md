@@ -88,6 +88,14 @@ pixel similarity.
   re-encoded, or captured a frame apart during a dead stop) are not
   detected as duplicates. This is an accepted gap, not an oversight.
 
+**Future enhancement:** Perceptual near-duplicate detection can be added
+later using image hashing or embeddings, but Phase 3b intentionally avoids
+image-processing dependencies. Until then, every field, log message, and
+CLI string produced by this feature — `duplicate_frame_groups`, the
+`quality_report.json` issue text, `inspect_dataset.py`'s output — describes
+it as **exact duplicate detection**, never "near-duplicate," since that
+would misstate what is actually implemented.
+
 ### 3. Dry-run synthetic episodes are expected to report large duplicate counts
 
 **Decision:** No special-casing was added to suppress or discount duplicate

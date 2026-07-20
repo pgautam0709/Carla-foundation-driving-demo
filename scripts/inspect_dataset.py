@@ -174,7 +174,7 @@ def _print_summary(
         print(f"    Outliers    : {quality.get('episodes_with_outliers', 0)} episode(s)"
               " (steering spikes / stuck throttle)")
         print(f"    Duplicates  : {quality.get('duplicate_frame_groups', 0)}"
-              " group(s) of identical frames")
+              " exact-duplicate group(s) (byte-identical frames)")
         issues = quality.get("issues", [])
         print(f"    Issues      : {len(issues)}"
               + ("" if verbose or not issues else " (use --verbose to list)"))

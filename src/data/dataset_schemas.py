@@ -258,9 +258,12 @@ class QualityReport:
             :mod:`src.data.dataset_outliers`). Purely informational — never
             affects inclusion.
         duplicate_frame_groups: Number of distinct sets of samples (within
-            one episode or across episodes) whose frame files are
-            byte-for-byte identical (see :mod:`src.data.dataset_duplicates`).
-            Purely informational — never affects inclusion.
+            one episode or across episodes) that are exact duplicates —
+            their frame files are byte-for-byte identical (see
+            :mod:`src.data.dataset_duplicates`). This is exact-match
+            detection only; it does not detect perceptually similar but
+            non-identical ("near-duplicate") frames. Purely informational
+            — never affects inclusion.
         issues: Ordered list of all :class:`QualityIssue` records.
     """
 

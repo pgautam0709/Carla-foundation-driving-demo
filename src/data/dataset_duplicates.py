@@ -12,6 +12,10 @@ Only exact (byte-for-byte) duplicates are detected here. Near-duplicate
 and comparing pixel data, which needs an image library (Pillow/OpenCV) not
 present in the base dependency set — see docs/PHASE3B_DATASET_HARDENING.md
 for why that trade-off was made.
+
+Future enhancement: perceptual near-duplicate detection can be added later
+using image hashing (e.g. average/difference hash) or embeddings, but
+Phase 3b intentionally avoids image-processing dependencies.
 """
 
 from __future__ import annotations
