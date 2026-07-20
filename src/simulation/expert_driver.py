@@ -57,7 +57,7 @@ class ExpertDriver:
             parameters; not required by the base autopilot mode).
     """
 
-    def __init__(self, vehicle: Any, cfg: dict) -> None:
+    def __init__(self, vehicle: Any, cfg: dict[str, Any]) -> None:
         self._vehicle = vehicle
         self._cfg = cfg
         self._started: bool = False
@@ -65,8 +65,8 @@ class ExpertDriver:
         # ── Phase 3 extension points ──────────────────────────────────────────
         # These will be populated by attach_collision_sensor() and
         # attach_lane_sensor() when implemented in Phase 3.
-        self._collision_sensor: Any = None  # type: ignore[assignment]
-        self._lane_sensor: Any = None       # type: ignore[assignment]
+        self._collision_sensor: Any = None
+        self._lane_sensor: Any = None
 
     # ── Lifecycle ──────────────────────────────────────────────────────────────
 

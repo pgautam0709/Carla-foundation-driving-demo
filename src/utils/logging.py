@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import structlog
 
@@ -93,4 +93,6 @@ def get_logger(name: str) -> structlog.BoundLogger:
     """
     if not _CONFIGURED:
         configure_logging()
-    return structlog.get_logger(name)
+    # structlog.get_logger() is typed to return Any; cast to the actual
+    # bound-logger type it produces at runtime.
+    return cast(structlog.BoundLogger, structlog.get_logger(name))

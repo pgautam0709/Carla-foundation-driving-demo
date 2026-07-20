@@ -30,22 +30,18 @@ from __future__ import annotations
 
 import time
 from types import TracebackType
-from typing import TYPE_CHECKING, Any
+from typing import Any, cast
 
 from src.utils.logging import get_logger
 
 log = get_logger(__name__)
 
 try:
-    import carla  # type: ignore[import]
+    import carla
     _CARLA_AVAILABLE = True
 except ImportError:
     _CARLA_AVAILABLE = False
-    carla = None  # type: ignore[assignment]
-
-if TYPE_CHECKING:
-    # For type checkers only — carla stubs are not distributed.
-    pass
+    carla = None
 
 
 class CARLAUnavailableError(RuntimeError):
@@ -143,7 +139,9 @@ class CARLAClient:
         """
         if not self.synchronous:
             raise RuntimeError("tick() requires synchronous mode.")
-        return self._world.tick()
+        # carla.World.tick() is untyped (no stubs); CARLA's own docs guarantee
+        # it returns the new frame number as an int.
+        return cast(int, self._world.tick())
 
     def register_actor(self, actor: Any) -> Any:
         """Register an actor for automatic cleanup on context exit.

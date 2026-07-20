@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 # Allow running from repo root without installing the package
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -35,7 +36,7 @@ log = get_logger(__name__)
 
 def collect_episode(
     client: CARLAClient,
-    cfg: dict,
+    cfg: dict[str, Any],
     episode_id: str,
 ) -> int:
     """Run a single data collection episode.

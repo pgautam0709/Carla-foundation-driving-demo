@@ -30,17 +30,18 @@ from types import TracebackType
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 from src.utils.logging import get_logger
 
 log = get_logger(__name__)
 
 try:
-    import carla  # type: ignore[import]
+    import carla
     _CARLA_AVAILABLE = True
 except ImportError:
     _CARLA_AVAILABLE = False
-    carla = None  # type: ignore[assignment]
+    carla = None
 
 
 # ── Data containers ────────────────────────────────────────────────────────────
@@ -49,7 +50,7 @@ except ImportError:
 class CameraFrame:
     """A single captured camera frame."""
 
-    image: np.ndarray          # (H, W, C) uint8
+    image: npt.NDArray[Any]    # (H, W, C) uint8 for RGB, or (H, W, 1) float32 for depth
     frame_id: int
     timestamp: float           # simulation timestamp in seconds
     sensor_transform: Any      # carla.Transform at capture time
@@ -211,7 +212,7 @@ class DepthCamera(_BaseCamera):
     _BLUEPRINT_ID = "sensor.camera.depth"
 
     def _on_image(self, raw_image: Any) -> None:
-        raw_image.convert(carla.ColorConverter.Depth)  # type: ignore[union-attr]
+        raw_image.convert(carla.ColorConverter.Depth)
         array = np.frombuffer(raw_image.raw_data, dtype=np.uint8)
         array = array.reshape((raw_image.height, raw_image.width, 4))
 

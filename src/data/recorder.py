@@ -52,17 +52,18 @@ from types import TracebackType
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 from src.utils.logging import get_logger
 
 log = get_logger(__name__)
 
 try:
-    import h5py  # type: ignore[import]
+    import h5py
     _H5PY_AVAILABLE = True
 except ImportError:
     _H5PY_AVAILABLE = False
-    h5py = None  # type: ignore[assignment]
+    h5py = None
 
 
 # ── Data containers ────────────────────────────────────────────────────────────
@@ -73,7 +74,7 @@ class EpisodeFrame:
 
     frame_id: int
     timestamp: float
-    rgb: np.ndarray             # (H, W, 3) uint8
+    rgb: npt.NDArray[np.uint8]  # (H, W, 3) uint8
     throttle: float             # [0, 1]
     steer: float                # [-1, 1]
     brake: float                # [0, 1]

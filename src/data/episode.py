@@ -14,6 +14,7 @@ import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 SCHEMA_VERSION: str = "2.0"
 
@@ -62,7 +63,7 @@ def generate_episode_id(
 
 # ── Route hash ─────────────────────────────────────────────────────────────────
 
-def compute_route_hash(route: dict) -> str:
+def compute_route_hash(route: dict[str, Any]) -> str:
     """Return the first 8 hex characters of the SHA-256 hash of the route dict.
 
     The dict is canonicalised (sorted keys) before hashing so that insertion

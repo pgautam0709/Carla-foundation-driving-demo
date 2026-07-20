@@ -398,7 +398,7 @@ def _run_live_collection(
     delta_s: float,
     carla_version: str,
     runtime_mode: str,
-    conn: dict,
+    conn: dict[str, Any],
     now: datetime,
 ) -> None:
     """Connect to CARLA and collect a live episode.
@@ -463,7 +463,7 @@ def _run_live_collection(
         camera_bp.set_attribute("image_size_x", str(camera_width))
         camera_bp.set_attribute("image_size_y", str(camera_height))
         camera_bp.set_attribute("fov", str(camera_fov))
-        import carla  # type: ignore[import]
+        import carla
         cam_transform = carla.Transform(
             carla.Location(x=1.5, y=0.0, z=2.4),
             carla.Rotation(pitch=-15.0),
@@ -472,7 +472,7 @@ def _run_live_collection(
         client.register_actor(camera)
 
         import queue
-        image_queue: queue.Queue = queue.Queue()
+        image_queue: queue.Queue[Any] = queue.Queue()
         camera.listen(image_queue.put)
 
         # Warm-up

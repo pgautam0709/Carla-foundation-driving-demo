@@ -29,6 +29,7 @@ from __future__ import annotations
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 # Ensure repo root is on sys.path so src/ imports work
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +43,12 @@ from src.utils.runtime import (  # noqa: E402
     format_carla_unavailable_message,
     format_carla_unreachable_message,
 )
+
+if TYPE_CHECKING:
+    # Only needed for the client_cls: type[CARLAClient] annotation below —
+    # the runtime import happens inside main() to give a friendlier error
+    # message if src.simulation.client itself fails to import.
+    from src.simulation.client import CARLAClient
 
 log = get_logger(__name__)
 
@@ -151,7 +158,7 @@ class _CARLAConnectionError(RuntimeError):
 
 def _run_smoke_test(
     *,
-    client_cls: type,
+    client_cls: type[CARLAClient],
     host: str,
     port: int,
     timeout: float,
@@ -176,7 +183,7 @@ def _run_smoke_test(
     """
     connect_start = time.monotonic()
     try:
-        with client_cls(  # type: ignore[call-arg]
+        with client_cls(
             host=host,
             port=port,
             timeout_s=timeout,

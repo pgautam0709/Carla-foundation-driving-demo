@@ -35,11 +35,11 @@ from src.utils.logging import get_logger
 log = get_logger(__name__)
 
 try:
-    import carla  # type: ignore[import]
+    import carla
     _CARLA_AVAILABLE = True
 except ImportError:
     _CARLA_AVAILABLE = False
-    carla = None  # type: ignore[assignment]
+    carla = None
 
 
 @dataclass
@@ -130,7 +130,9 @@ class AutopilotAgent:
     def get_velocity_kmh(self) -> float:
         """Return the ego vehicle's current speed in km/h."""
         vel = self._vehicle.get_velocity()
-        speed_ms = (vel.x**2 + vel.y**2 + vel.z**2) ** 0.5
+        # vel.x/y/z are untyped (no carla stubs); declare the computed speed
+        # explicitly so its type doesn't stay Any all the way to the return.
+        speed_ms: float = (vel.x**2 + vel.y**2 + vel.z**2) ** 0.5
         return speed_ms * 3.6
 
     @property

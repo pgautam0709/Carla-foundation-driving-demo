@@ -38,6 +38,7 @@ import sys
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
 # ── Minimal colour support (no dependencies) ───────────────────────────────────
 _NO_COLOUR = not sys.stdout.isatty() or os.environ.get("NO_COLOR")
@@ -47,12 +48,28 @@ def _c(text: str, code: str) -> str:
     return text if _NO_COLOUR else f"\033[{code}m{text}\033[0m"
 
 
-GREEN  = lambda t: _c(t, "32")  # noqa: E731
-YELLOW = lambda t: _c(t, "33")  # noqa: E731
-RED    = lambda t: _c(t, "31")  # noqa: E731
-BOLD   = lambda t: _c(t, "1")   # noqa: E731
-DIM    = lambda t: _c(t, "2")   # noqa: E731
-CYAN   = lambda t: _c(t, "36")  # noqa: E731
+def GREEN(t: str) -> str:  # noqa: N802
+    return _c(t, "32")
+
+
+def YELLOW(t: str) -> str:  # noqa: N802
+    return _c(t, "33")
+
+
+def RED(t: str) -> str:  # noqa: N802
+    return _c(t, "31")
+
+
+def BOLD(t: str) -> str:  # noqa: N802
+    return _c(t, "1")
+
+
+def DIM(t: str) -> str:  # noqa: N802
+    return _c(t, "2")
+
+
+def CYAN(t: str) -> str:  # noqa: N802
+    return _c(t, "36")
 
 
 # ── Result model ───────────────────────────────────────────────────────────────
@@ -98,7 +115,7 @@ class DiagnosticsReport:
 
 # ── Config loader (self-contained, no src/ imports) ────────────────────────────
 
-def _simple_deep_merge(base: dict, override: dict) -> dict:
+def _simple_deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     result = copy.deepcopy(base)
     for k, v in override.items():
         if k in result and isinstance(result[k], dict) and isinstance(v, dict):
@@ -108,10 +125,10 @@ def _simple_deep_merge(base: dict, override: dict) -> dict:
     return result
 
 
-def _load_cfg(config_path: str, profile: str) -> dict:
+def _load_cfg(config_path: str, profile: str) -> dict[str, Any]:
     """Load YAML config + profile for diagnose. Silent on missing yaml."""
     try:
-        import yaml  # type: ignore[import]
+        import yaml
     except ImportError:
         return {}
     try:
@@ -121,13 +138,13 @@ def _load_cfg(config_path: str, profile: str) -> dict:
         if not p.exists():
             return {}
         with p.open() as f:
-            cfg: dict = yaml.safe_load(f) or {}
+            cfg: dict[str, Any] = yaml.safe_load(f) or {}
 
         if profile:
             pp = p.parent / "profiles" / f"{profile}.yaml"
             if pp.exists():
                 with pp.open() as f:
-                    override: dict = yaml.safe_load(f) or {}
+                    override: dict[str, Any] = yaml.safe_load(f) or {}
                 cfg = _simple_deep_merge(cfg, override)
 
         # Apply env var overrides into carla_connection section
@@ -290,7 +307,7 @@ def check_package(
     detail = f"v{version}"
     if min_version:
         try:
-            from packaging.version import Version  # type: ignore[import]
+            from packaging.version import Version
             if Version(version) < Version(min_version):
                 return CheckResult(
                     name, Status.WARN,
@@ -325,7 +342,7 @@ def check_carla_package(api_path: str | None = None) -> CheckResult:
             critical=False,
         )
     try:
-        import carla  # type: ignore[import]
+        import carla
         version = getattr(carla, "__version__", "unknown")
         return CheckResult("carla Python package", Status.OK, f"v{version}")
     except Exception as exc:
@@ -411,7 +428,7 @@ def check_cuda() -> CheckResult:
             critical=False,
         )
     try:
-        import torch  # type: ignore[import]
+        import torch
         if torch.cuda.is_available():
             n = torch.cuda.device_count()
             name = torch.cuda.get_device_name(0) if n > 0 else "unknown"
@@ -451,7 +468,7 @@ def check_data_dirs() -> list[CheckResult]:
     return results
 
 
-def check_env_vars(cfg: dict) -> list[CheckResult]:
+def check_env_vars(cfg: dict[str, Any]) -> list[CheckResult]:
     """Check relevant environment variables."""
     results = []
     conn = cfg.get("carla_connection", {})
@@ -591,9 +608,10 @@ def main() -> None:
         or os.environ.get("CARLA_HOST")
         or conn.get("host", "localhost")
     )
+    carla_port_env = os.environ.get("CARLA_PORT")
     carla_port = (
         args.carla_port
-        or (int(os.environ.get("CARLA_PORT")) if os.environ.get("CARLA_PORT") else None)
+        or (int(carla_port_env) if carla_port_env else None)
         or conn.get("port", 2000)
     )
     runtime_mode  = rt.get("mode", "local")
