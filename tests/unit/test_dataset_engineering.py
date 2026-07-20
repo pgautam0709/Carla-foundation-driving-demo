@@ -7,11 +7,16 @@ exercise:
   TestDiscovery            — discover_episodes over various directory layouts
   TestAlignment            — check_alignment pass/fail/truncation paths
   TestSplits                — assign_split determinism and distribution
-  TestStatistics            — compute_statistics aggregation
+  TestStatistics            — compute_statistics aggregation, incl. steering histogram
+  TestOutlierDetection       — check_outliers steering-spike / stuck-throttle findings
+  TestDuplicateDetection     — find_duplicate_frames exact-match grouping
   TestDatasetBuilder        — build_dataset end-to-end orchestration
   TestQualityReport         — exclusion reasons and quality issue reporting
   TestBuildDatasetCLI        — scripts/build_dataset.py CLI
   TestInspectDatasetCLI      — scripts/inspect_dataset.py CLI
+
+--fix-manifest / write_validation_status tests live in test_episode.py
+alongside the rest of EpisodeValidator's coverage.
 """
 
 from __future__ import annotations
@@ -34,6 +39,8 @@ for _p in (str(_REPO_ROOT), str(_REPO_ROOT / "scripts")):
 from src.data.dataset_alignment import check_alignment  # noqa: E402
 from src.data.dataset_builder import build_dataset  # noqa: E402
 from src.data.dataset_discovery import discover_episodes  # noqa: E402
+from src.data.dataset_duplicates import find_duplicate_frames  # noqa: E402
+from src.data.dataset_outliers import OutlierThresholds, check_outliers  # noqa: E402
 from src.data.dataset_schemas import EpisodeIndexEntry, SampleRecord  # noqa: E402
 from src.data.dataset_splits import assign_splits  # noqa: E402
 from src.data.dataset_statistics import compute_statistics  # noqa: E402
@@ -55,8 +62,15 @@ _FIXED_DT = datetime(2026, 7, 7, 14, 30, 12, tzinfo=timezone.utc)
 # Fixtures / helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _make_black_png_bytes(w: int = 2, h: int = 2) -> bytes:
-    """Generate a tiny but valid black PNG (2x2) for testing."""
+def _make_png_bytes(w: int = 2, h: int = 2, fill: int = 0) -> bytes:
+    """Generate a tiny but valid PNG (2x2 by default) filled with one byte value.
+
+    Varying *fill* produces frames with different byte content — used so
+    ``_write_episode`` can generate non-duplicate frames per tick (real
+    camera frames differ tick to tick), while duplicate-detection tests can
+    still deliberately reuse one *fill* value to construct an actual
+    duplicate.
+    """
     import struct
     import zlib
 
@@ -66,7 +80,8 @@ def _make_black_png_bytes(w: int = 2, h: int = 2) -> bytes:
 
     sig = b"\x89PNG\r\n\x1a\n"
     ihdr = chunk(b"IHDR", struct.pack(">II", w, h) + bytes([8, 2, 0, 0, 0]))
-    idat = chunk(b"IDAT", zlib.compress(bytes(1 + w * 3) * h, level=1))
+    row = bytes([0]) + bytes([fill % 256]) * (w * 3)
+    idat = chunk(b"IDAT", zlib.compress(row * h, level=1))
     iend = chunk(b"IEND", b"")
     return sig + ihdr + idat + iend
 
@@ -125,9 +140,14 @@ def _write_episode(
     throttle: float = 0.5,
     speed_kph: float = 18.0,
 ) -> Path:
-    """Write a fully valid, aligned Phase 2 episode directory and return its root."""
+    """Write a fully valid, aligned Phase 2 episode directory and return its root.
+
+    Each tick gets a distinct frame (varying fill byte) so episodes built by
+    this helper are not, by construction, one giant duplicate-frame group —
+    real camera frames differ tick to tick. Tests that specifically want
+    duplicate frames write them explicitly instead.
+    """
     ep_dir = EpisodeDirectory(base_dir, episode_id)
-    png = _make_black_png_bytes()
 
     with EpisodeWriter(ep_dir) as writer:
         writer.write_metadata(_make_metadata(episode_id, town=town))
@@ -150,7 +170,7 @@ def _write_episode(
                 acceleration=None, speed_mps=speed_kph / 3.6, speed_kph=speed_kph,
                 angular_velocity=None, traffic_light_state=None, speed_limit=None,
             ))
-            writer.write_frame(png, frame_idx=i)
+            writer.write_frame(_make_png_bytes(fill=i), frame_idx=i)
         writer.write_event(EventRecord(
             tick=max(ticks - 1, 0), frame=max(ticks - 1, 0),
             timestamp_wall=time.monotonic(),
@@ -174,6 +194,22 @@ def _append_extra_control_row(episode_root: Path, tick: int) -> None:
             "hand_brake": False, "reverse": False,
             "manual_gear_shift": False, "gear": 0,
         }) + "\n")
+
+
+def _rewrite_controls_steer(episode_root: Path, steer_values: list[float]) -> None:
+    """Overwrite each row's ``steer`` field in ``controls.jsonl`` in place.
+
+    Args:
+        episode_root: Episode root directory.
+        steer_values: New steer value per tick, in tick order. Must have the
+            same length as the existing controls.jsonl.
+    """
+    path = episode_root / "controls.jsonl"
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+    assert len(rows) == len(steer_values)
+    for row, steer in zip(rows, steer_values, strict=True):
+        row["steer"] = steer
+    path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -338,6 +374,7 @@ class TestStatistics:
         assert stats.brake is None
         assert stats.steer is None
         assert stats.speed_kph is None
+        assert stats.steering_histogram == []
 
     def _episode(self, episode_id: str, town: str, included: bool) -> EpisodeIndexEntry:
         return EpisodeIndexEntry(
@@ -351,13 +388,14 @@ class TestStatistics:
             truncated=False, split="train",
         )
 
-    def _sample(self, episode_id: str, throttle: float, speed_kph: float, split: str) -> (
-        SampleRecord
-    ):
+    def _sample(
+        self, episode_id: str, throttle: float, speed_kph: float, split: str,
+        steer: float = 0.0,
+    ) -> SampleRecord:
         return SampleRecord(
             sample_id=f"{episode_id}_000000", episode_id=episode_id, tick=0,
             frame_path=f"/tmp/{episode_id}/frames/front_camera/000000.png",
-            throttle=throttle, brake=0.0, steer=0.0, speed_kph=speed_kph, split=split,
+            throttle=throttle, brake=0.0, steer=steer, speed_kph=speed_kph, split=split,
         )
 
     def test_computes_mean_min_max(self) -> None:
@@ -394,6 +432,126 @@ class TestStatistics:
         assert stats.split_counts.train == 2
         assert stats.split_counts.val == 1
         assert stats.split_counts.test == 0
+
+    def test_steering_histogram_bin_count_matches_requested_bins(self) -> None:
+        episodes = [self._episode("ep1", "Town03", included=True)]
+        samples = [self._sample("ep1", 0.0, 10.0, "train", steer=s) for s in (-0.9, 0.0, 0.9)]
+        stats = compute_statistics(episodes, samples, steering_histogram_bins=5)
+        assert len(stats.steering_histogram) == 5
+        assert sum(b.count for b in stats.steering_histogram) == 3
+
+    def test_steering_histogram_buckets_extremes_correctly(self) -> None:
+        episodes = [self._episode("ep1", "Town03", included=True)]
+        samples = [
+            self._sample("ep1", 0.0, 10.0, "train", steer=-1.0),
+            self._sample("ep1", 0.0, 10.0, "train", steer=1.0),
+        ]
+        stats = compute_statistics(episodes, samples, steering_histogram_bins=10)
+        assert stats.steering_histogram[0].count == 1  # -1.0 falls in the first bin
+        assert stats.steering_histogram[-1].count == 1  # +1.0 clamps into the last bin
+
+    def test_steering_histogram_empty_when_no_samples(self) -> None:
+        stats = compute_statistics([], [], steering_histogram_bins=10)
+        assert stats.steering_histogram == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TestOutlierDetection
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestOutlierDetection:
+    """check_outliers(): steering-spike and stuck-throttle findings."""
+
+    def test_no_findings_for_smooth_normal_episode(self, tmp_path: Path) -> None:
+        root = _write_episode(tmp_path, "episode_normal", ticks=20)
+        result = check_outliers(root, OutlierThresholds())
+        assert result.issues == []
+        assert result.steering_spike_count == 0
+        assert result.stuck_throttle_max_run == 0
+
+    def test_detects_steering_spike(self, tmp_path: Path) -> None:
+        root = _write_episode(tmp_path, "episode_spike", ticks=5)
+        # tick 1→2 jumps by 0.9 and then holds — exactly one qualifying delta.
+        _rewrite_controls_steer(root, [0.0, 0.0, 0.9, 0.9, 0.9])
+        result = check_outliers(root, OutlierThresholds(steering_spike_delta=0.6))
+        assert result.steering_spike_count == 1
+        assert result.steering_spike_max_delta == pytest.approx(0.9)
+        assert any("spike" in issue for issue in result.issues)
+
+    def test_no_spike_below_threshold(self, tmp_path: Path) -> None:
+        root = _write_episode(tmp_path, "episode_small_delta", ticks=5)
+        _rewrite_controls_steer(root, [0.0, 0.1, 0.2, 0.1, 0.0])
+        result = check_outliers(root, OutlierThresholds(steering_spike_delta=0.6))
+        assert result.steering_spike_count == 0
+
+    def test_detects_stuck_throttle(self, tmp_path: Path) -> None:
+        root = _write_episode(tmp_path, "episode_stuck", ticks=50, throttle=0.95, speed_kph=0.0)
+        result = check_outliers(root, OutlierThresholds(
+            stuck_throttle_min=0.9, stuck_speed_max_kph=1.0, stuck_throttle_min_ticks=40,
+        ))
+        assert result.stuck_throttle_max_run >= 40
+        assert any("stuck-throttle" in issue for issue in result.issues)
+
+    def test_no_stuck_throttle_when_moving(self, tmp_path: Path) -> None:
+        root = _write_episode(tmp_path, "episode_moving", ticks=50, throttle=0.95, speed_kph=40.0)
+        result = check_outliers(root, OutlierThresholds(
+            stuck_throttle_min=0.9, stuck_speed_max_kph=1.0, stuck_throttle_min_ticks=40,
+        ))
+        assert result.stuck_throttle_max_run == 0
+
+    def test_missing_files_yield_no_findings(self, tmp_path: Path) -> None:
+        root = tmp_path / "episode_empty"
+        root.mkdir()
+        result = check_outliers(root, OutlierThresholds())
+        assert result.issues == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TestDuplicateDetection
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestDuplicateDetection:
+    """find_duplicate_frames(): exact byte-identical frame grouping."""
+
+    def _sample(self, episode_id: str, tick: int, frame_path: Path) -> SampleRecord:
+        return SampleRecord(
+            sample_id=f"{episode_id}_{tick:06d}", episode_id=episode_id, tick=tick,
+            frame_path=str(frame_path), throttle=0.0, brake=0.0, steer=0.0,
+            speed_kph=0.0, split="train",
+        )
+
+    def test_no_duplicates_for_distinct_frames(self, tmp_path: Path) -> None:
+        samples = []
+        for i in range(3):
+            path = tmp_path / f"frame_{i}.png"
+            path.write_bytes(_make_png_bytes(fill=i))
+            samples.append(self._sample("ep1", i, path))
+        assert find_duplicate_frames(samples) == []
+
+    def test_finds_duplicate_within_one_episode(self, tmp_path: Path) -> None:
+        shared = tmp_path / "shared.png"
+        shared.write_bytes(_make_png_bytes(fill=7))
+        samples = [self._sample("ep1", 0, shared), self._sample("ep1", 1, shared)]
+        groups = find_duplicate_frames(samples)
+        assert len(groups) == 1
+        assert set(groups[0].sample_ids) == {"ep1_000000", "ep1_000001"}
+        assert groups[0].episode_ids == ["ep1"]
+
+    def test_finds_duplicate_across_episodes(self, tmp_path: Path) -> None:
+        shared = tmp_path / "shared.png"
+        shared.write_bytes(_make_png_bytes(fill=3))
+        samples = [self._sample("ep1", 0, shared), self._sample("ep2", 0, shared)]
+        groups = find_duplicate_frames(samples)
+        assert len(groups) == 1
+        assert groups[0].episode_ids == ["ep1", "ep2"]
+
+    def test_missing_frame_file_skipped_not_raised(self, tmp_path: Path) -> None:
+        missing = tmp_path / "does_not_exist.png"
+        samples = [self._sample("ep1", 0, missing)]
+        assert find_duplicate_frames(samples) == []
+
+    def test_empty_sample_list_returns_empty(self) -> None:
+        assert find_duplicate_frames([]) == []
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -584,6 +742,69 @@ class TestDatasetBuilder:
         stored = json.loads((out / "dataset_manifest.json").read_text())
         assert stored["dataset_id"] == "explicit_id"
 
+    def test_outlier_detection_flags_stuck_throttle_episode(self, tmp_path: Path) -> None:
+        raw = tmp_path / "raw"
+        _write_episode(raw, "episode_stuck", ticks=50, throttle=0.95, speed_kph=0.0)
+        out = tmp_path / "out"
+        manifest = build_dataset(raw_episodes_dir=raw, output_dir=out,
+                                  split_ratios=self.RATIOS, split_seed=42)
+        assert manifest.outlier_detection_enabled is True
+        assert manifest.outlier_thresholds is not None
+        report = json.loads((out / "quality_report.json").read_text())
+        assert report["episodes_with_outliers"] == 1
+        assert any("stuck-throttle" in i["message"] for i in report["issues"])
+
+    def test_outlier_detection_disabled_via_flag(self, tmp_path: Path) -> None:
+        raw = tmp_path / "raw"
+        _write_episode(raw, "episode_stuck", ticks=50, throttle=0.95, speed_kph=0.0)
+        out = tmp_path / "out"
+        manifest = build_dataset(raw_episodes_dir=raw, output_dir=out,
+                                  split_ratios=self.RATIOS, split_seed=42,
+                                  outlier_detection=False)
+        assert manifest.outlier_detection_enabled is False
+        assert manifest.outlier_thresholds is None
+        report = json.loads((out / "quality_report.json").read_text())
+        assert report["episodes_with_outliers"] == 0
+
+    def test_duplicate_detection_flags_identical_frames_across_episodes(
+        self, tmp_path: Path,
+    ) -> None:
+        # _write_episode's frames depend only on tick index, so two episodes
+        # with overlapping tick ranges naturally share identical frame bytes
+        # per corresponding tick — mirroring how Phase 2 dry-run collection
+        # always emits identical solid-black frames.
+        raw = tmp_path / "raw"
+        _write_episode(raw, "episode_a", ticks=3)
+        _write_episode(raw, "episode_b", ticks=3)
+        out = tmp_path / "out"
+        manifest = build_dataset(raw_episodes_dir=raw, output_dir=out,
+                                  split_ratios=self.RATIOS, split_seed=42)
+        assert manifest.duplicate_detection_enabled is True
+        report = json.loads((out / "quality_report.json").read_text())
+        assert report["duplicate_frame_groups"] > 0
+        assert any(i["episode_id"] == "<dataset>" for i in report["issues"])
+
+    def test_duplicate_detection_disabled_via_flag(self, tmp_path: Path) -> None:
+        raw = tmp_path / "raw"
+        _write_episode(raw, "episode_a", ticks=3)
+        _write_episode(raw, "episode_b", ticks=3)
+        out = tmp_path / "out"
+        manifest = build_dataset(raw_episodes_dir=raw, output_dir=out,
+                                  split_ratios=self.RATIOS, split_seed=42,
+                                  duplicate_detection=False)
+        assert manifest.duplicate_detection_enabled is False
+        report = json.loads((out / "quality_report.json").read_text())
+        assert report["duplicate_frame_groups"] == 0
+
+    def test_steering_histogram_bins_configurable(self, tmp_path: Path) -> None:
+        raw = tmp_path / "raw"
+        _write_episode(raw, "episode_1", ticks=5)
+        out = tmp_path / "out"
+        build_dataset(raw_episodes_dir=raw, output_dir=out,
+                       split_ratios=self.RATIOS, split_seed=42, steering_histogram_bins=4)
+        stats = json.loads((out / "stats.json").read_text())
+        assert len(stats["steering_histogram"]) == 4
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TestQualityReport
@@ -668,6 +889,8 @@ class TestBuildDatasetCLI:
         assert "--output-dir" in result.output
         assert "--split-seed" in result.output
         assert "--allow-partial-alignment" in result.output
+        assert "--outlier-detection" in result.output
+        assert "--duplicate-detection" in result.output
 
     def test_full_run_creates_files(self, tmp_path: Path) -> None:
         from click.testing import CliRunner
@@ -706,6 +929,27 @@ class TestBuildDatasetCLI:
         manifest = json.loads((out / "dataset_manifest.json").read_text())
         assert manifest["episode_count_included"] == 1
         assert manifest["allow_partial_alignment"] is True
+
+    def test_no_outlier_and_no_duplicate_detection_flags(self, tmp_path: Path) -> None:
+        from click.testing import CliRunner
+
+        from build_dataset import main
+        raw = tmp_path / "raw"
+        _write_episode(raw, "episode_stuck", ticks=50, throttle=0.95, speed_kph=0.0)
+        out = tmp_path / "out"
+        result = CliRunner().invoke(main, [
+            "--raw-episodes-dir", str(raw),
+            "--output-dir", str(out),
+            "--no-outlier-detection",
+            "--no-duplicate-detection",
+        ])
+        assert result.exit_code == 0, result.output
+        manifest = json.loads((out / "dataset_manifest.json").read_text())
+        assert manifest["outlier_detection_enabled"] is False
+        assert manifest["duplicate_detection_enabled"] is False
+        report = json.loads((out / "quality_report.json").read_text())
+        assert report["episodes_with_outliers"] == 0
+        assert report["duplicate_frame_groups"] == 0
 
     def test_default_output_is_versioned_under_datasets_dir(self, tmp_path: Path) -> None:
         """No --output-dir given: writes under data/processed/datasets/<dataset_id>/."""
@@ -797,6 +1041,23 @@ class TestInspectDatasetCLI:
         assert "Samples" in result.output
         assert "Misaligned" in result.output
         assert "Truncated" in result.output
+        assert "Outliers" in result.output
+        assert "Duplicates" in result.output
+
+    def test_shows_steering_histogram(self, tmp_path: Path) -> None:
+        from click.testing import CliRunner
+
+        from inspect_dataset import main
+        raw = tmp_path / "raw"
+        _write_episode(raw, "episode_1", ticks=5)
+        out = tmp_path / "out"
+        build_dataset(
+            raw_episodes_dir=raw, output_dir=out,
+            split_ratios={"train": 0.8, "val": 0.1, "test": 0.1}, split_seed=1,
+        )
+        result = CliRunner().invoke(main, ["--dataset-dir", str(out)])
+        assert result.exit_code == 0, result.output
+        assert "Steering histogram" in result.output
 
     def test_shows_truncated_count_for_partial_alignment_dataset(self, tmp_path: Path) -> None:
         from click.testing import CliRunner

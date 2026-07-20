@@ -49,7 +49,7 @@ from src.data.schemas import (  # noqa: E402
     SensorConfig,
     TelemetryRecord,
 )
-from src.data.validation import EpisodeValidator  # noqa: E402
+from src.data.validation import EpisodeValidator, write_validation_status  # noqa: E402
 from src.data.writers import EpisodeWriter, FrameWriter, JSONLWriter  # noqa: E402
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -699,3 +699,76 @@ class TestCLIParsing:
         result = CliRunner().invoke(vmain, ["--help"])
         assert result.exit_code == 0
         assert "--verbose" in result.output
+        assert "--fix-manifest" in result.output
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TestFixManifest
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestFixManifest:
+    """write_validation_status() and validate_episode.py --fix-manifest."""
+
+    def test_writes_valid_status(self, tmp_path: Path) -> None:
+        episode_id = "episode_fix_valid"
+        root = _build_valid_episode(tmp_path, episode_id, ticks=3)
+        write_validation_status(root, valid=True)
+        manifest = json.loads((root / "manifest.json").read_text())
+        assert manifest["validation_status"] == "valid"
+
+    def test_writes_invalid_status(self, tmp_path: Path) -> None:
+        episode_id = "episode_fix_invalid"
+        root = _build_valid_episode(tmp_path, episode_id, ticks=3)
+        write_validation_status(root, valid=False)
+        manifest = json.loads((root / "manifest.json").read_text())
+        assert manifest["validation_status"] == "invalid"
+
+    def test_preserves_other_manifest_fields(self, tmp_path: Path) -> None:
+        episode_id = "episode_fix_preserve"
+        root = _build_valid_episode(tmp_path, episode_id, ticks=3)
+        before = json.loads((root / "manifest.json").read_text())
+        write_validation_status(root, valid=True)
+        after = json.loads((root / "manifest.json").read_text())
+        assert after["episode_id"] == before["episode_id"]
+        assert after["frame_count"] == before["frame_count"]
+        assert after["schema_version"] == before["schema_version"]
+
+    def test_raises_when_manifest_missing(self, tmp_path: Path) -> None:
+        episode_id = "episode_fix_no_manifest"
+        root = _build_valid_episode(tmp_path, episode_id, ticks=2)
+        (root / "manifest.json").unlink()
+        with pytest.raises(FileNotFoundError):
+            write_validation_status(root, valid=True)
+
+    def test_cli_fix_manifest_updates_status(self, tmp_path: Path) -> None:
+        from click.testing import CliRunner
+
+        from validate_episode import main
+        episode_id = "episode_cli_fix"
+        root = _build_valid_episode(tmp_path, episode_id, ticks=3)
+        result = CliRunner().invoke(main, [str(root), "--fix-manifest"])
+        assert result.exit_code == 0, result.output
+        assert "validation_status" in result.output
+        manifest = json.loads((root / "manifest.json").read_text())
+        assert manifest["validation_status"] == "valid"
+
+    def test_cli_without_fix_manifest_leaves_status_unchecked(self, tmp_path: Path) -> None:
+        from click.testing import CliRunner
+
+        from validate_episode import main
+        episode_id = "episode_cli_no_fix"
+        root = _build_valid_episode(tmp_path, episode_id, ticks=3)
+        result = CliRunner().invoke(main, [str(root)])
+        assert result.exit_code == 0, result.output
+        manifest = json.loads((root / "manifest.json").read_text())
+        assert manifest["validation_status"] == "unchecked"
+
+    def test_cli_fix_manifest_warns_when_manifest_missing(self, tmp_path: Path) -> None:
+        from click.testing import CliRunner
+
+        from validate_episode import main
+        episode_id = "episode_cli_fix_missing"
+        root = _build_valid_episode(tmp_path, episode_id, ticks=2)
+        (root / "manifest.json").unlink()
+        result = CliRunner().invoke(main, [str(root), "--fix-manifest"])
+        assert "skipped" in result.output

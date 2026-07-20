@@ -360,6 +360,36 @@ class EpisodeValidator:
         )
 
 
+# ── Manifest fixup (Phase 3b) ────────────────────────────────────────────────────
+
+def write_validation_status(episode_dir: Path, valid: bool) -> None:
+    """Write a validation outcome back into ``manifest.json``'s ``validation_status``.
+
+    Collection always writes ``validation_status: "unchecked"`` (see
+    :meth:`~src.data.writers.EpisodeWriter.finalize_manifest`) — this is the
+    Phase 3 follow-through referenced in ``docs/PHASE2_DATA_COLLECTION.md``
+    (ADR-003) that updates it once an episode has actually been validated.
+
+    Args:
+        episode_dir: Episode root directory.
+        valid: The :attr:`ValidationResult.valid` outcome to record —
+            written as ``"valid"`` or ``"invalid"``.
+
+    Raises:
+        FileNotFoundError: If ``manifest.json`` does not exist in
+            *episode_dir* — there is nothing to fix.
+    """
+    manifest_path = episode_dir / "manifest.json"
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"manifest.json not found: {manifest_path}")
+
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    data["validation_status"] = "valid" if valid else "invalid"
+    manifest_path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+    log.info("validator.manifest_fixed", episode_id=episode_dir.name,
+             validation_status=data["validation_status"])
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _count_jsonl_rows(path: Path) -> int:

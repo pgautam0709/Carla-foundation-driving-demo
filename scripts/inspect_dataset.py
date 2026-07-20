@@ -152,6 +152,17 @@ def _print_summary(
             print(f"    {name:<10} : {s['mean']:.3f} / {s['std']:.3f} "
                   f"/ {s['min']:.3f} / {s['max']:.3f}")
 
+    histogram = stats.get("steering_histogram") or []
+    if any(b["count"] for b in histogram):
+        print()
+        print("  Steering histogram (informational, no sampling applied):")
+        max_count = max(b["count"] for b in histogram)
+        bar_width = 30
+        for b in histogram:
+            bar_len = int(bar_width * b["count"] / max_count) if max_count else 0
+            label = f"[{b['range_min']:+.2f}, {b['range_max']:+.2f})"
+            print(f"    {label:<16} {'#' * bar_len:<{bar_width}} {b['count']}")
+
     if quality is not None:
         print()
         print(f"  Quality report : {manifest.get('quality_report_path')}")
@@ -160,6 +171,10 @@ def _print_summary(
         print(f"    Misaligned  : {quality.get('episodes_misaligned', 0)}")
         print(f"    Truncated   : {quality.get('episodes_truncated', 0)}"
               " (included despite misalignment)")
+        print(f"    Outliers    : {quality.get('episodes_with_outliers', 0)} episode(s)"
+              " (steering spikes / stuck throttle)")
+        print(f"    Duplicates  : {quality.get('duplicate_frame_groups', 0)}"
+              " group(s) of identical frames")
         issues = quality.get("issues", [])
         print(f"    Issues      : {len(issues)}"
               + ("" if verbose or not issues else " (use --verbose to list)"))

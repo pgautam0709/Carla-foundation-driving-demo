@@ -31,7 +31,7 @@ DATASET_DIR ?= $(patsubst %/,%,$(_LATEST_DATASET))
 # ── Phony targets ──────────────────────────────────────────────────────────────
 .PHONY: help setup diagnose lint lint-fix type-check test test-all \
         smoke carla-docker carla-windows-help \
-        collect collect-dry-run validate-episode \
+        collect collect-dry-run validate-episode fix-manifest \
         build-dataset inspect-dataset dataset-dry-run \
         train clean
 
@@ -136,6 +136,13 @@ validate-episode: ## Validate an episode directory (set EPISODE_DIR=<path>)
 		exit 1; \
 	fi
 	$(PYTHON) scripts/validate_episode.py $(EPISODE_DIR) --verbose
+
+fix-manifest: ## Validate an episode and write validation_status back to manifest.json (set EPISODE_DIR=<path>)
+	@if [ -z "$(EPISODE_DIR)" ]; then \
+		echo "[FAIL] No episode found. Run: make collect-dry-run first"; \
+		exit 1; \
+	fi
+	$(PYTHON) scripts/validate_episode.py $(EPISODE_DIR) --fix-manifest --verbose
 
 build-dataset: ## Build a new versioned Phase 3 dataset from collected Phase 2 episodes (no CARLA required)
 	$(PYTHON) scripts/build_dataset.py --profile $(PROFILE)

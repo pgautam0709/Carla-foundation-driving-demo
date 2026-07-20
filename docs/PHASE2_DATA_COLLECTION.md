@@ -240,7 +240,9 @@ The following stubs are already in place:
 - `ExpertDriver.attach_collision_sensor(world)` — collision event recording
 - `ExpertDriver.attach_lane_sensor(world)` — lane invasion recording
 - `EventRecord.event_type = "collision"` — payload schema ready
-- `validate_episode.py --fix-manifest` — will rewrite `validation_status`
+- ~~`validate_episode.py --fix-manifest` — will rewrite `validation_status`~~
+  **Done in Phase 3b** — see `write_validation_status()` in
+  `src/data/validation.py` and `docs/PHASE3B_DATASET_HARDENING.md`.
 
 ---
 

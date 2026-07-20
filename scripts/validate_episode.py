@@ -10,9 +10,15 @@ Usage::
     # Validate a specific episode:
     python scripts/validate_episode.py data/raw/episodes/episode_20260707_...
 
+    # Also write the outcome back into manifest.json's validation_status
+    # (collection always writes "unchecked" — see ADR-003 in
+    # docs/PHASE2_DATA_COLLECTION.md):
+    python scripts/validate_episode.py data/raw/episodes/episode_20260707_... --fix-manifest
+
     # Via Makefile (validates most recent episode by default):
     make validate-episode
     make validate-episode EPISODE_DIR=data/raw/episodes/episode_20260707_...
+    make fix-manifest EPISODE_DIR=data/raw/episodes/episode_20260707_...
 """
 
 from __future__ import annotations
@@ -27,7 +33,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from src.data.validation import EpisodeValidator  # noqa: E402
+from src.data.validation import EpisodeValidator, write_validation_status  # noqa: E402
 
 
 @click.command(
@@ -44,7 +50,13 @@ from src.data.validation import EpisodeValidator  # noqa: E402
     default=False,
     help="Print all check results, not just failures.",
 )
-def main(episode_dir: Path, verbose: bool) -> None:
+@click.option(
+    "--fix-manifest",
+    is_flag=True,
+    default=False,
+    help="Write the validation outcome back into manifest.json's validation_status.",
+)
+def main(episode_dir: Path, verbose: bool, fix_manifest: bool) -> None:
     """Validate EPISODE_DIR — the root of a single collected episode."""
     validator = EpisodeValidator()
     result = validator.validate(episode_dir)
@@ -60,6 +72,14 @@ def main(episode_dir: Path, verbose: bool) -> None:
         if verbose or not check.passed:
             badge = "\033[32m[ OK ]\033[0m" if check.passed else "\033[31m[FAIL]\033[0m"
             print(f"  {badge}  {check.name:<35}  {check.detail}")
+
+    if fix_manifest:
+        try:
+            write_validation_status(episode_dir, result.valid)
+            status = "valid" if result.valid else "invalid"
+            print(f"\n  \033[36m[FIX]\033[0m  manifest.json validation_status → {status!r}")
+        except FileNotFoundError as exc:
+            print(f"\n  \033[33m[WARN]\033[0m  --fix-manifest skipped: {exc}")
 
     print()
     if result.valid:

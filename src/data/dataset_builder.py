@@ -9,13 +9,18 @@ Turns a directory of Phase 2 episodes into a flat, indexed dataset:
        By default, misaligned episodes are **excluded** — pass
        ``allow_partial_alignment=True`` to include them truncated to their
        usable prefix instead.
-    4. Assign a deterministic train/val/test split per included episode, as
+    4. Check for signal outliers — steering spikes and stuck throttle
+       (:mod:`src.data.dataset_outliers`). Informational only; never
+       affects inclusion.
+    5. Assign a deterministic train/val/test split per included episode, as
        a batch so small episode counts still cover every configured split
        (:mod:`src.data.dataset_splits`).
-    5. Emit one :class:`~src.data.dataset_schemas.SampleRecord` per usable
+    6. Emit one :class:`~src.data.dataset_schemas.SampleRecord` per usable
        tick of every included episode.
-    6. Compute aggregate statistics (:mod:`src.data.dataset_statistics`).
-    7. Write ``dataset_manifest.json``, ``episodes_index.jsonl``,
+    7. Check for exact duplicate frames across included samples
+       (:mod:`src.data.dataset_duplicates`). Informational only.
+    8. Compute aggregate statistics (:mod:`src.data.dataset_statistics`).
+    9. Write ``dataset_manifest.json``, ``episodes_index.jsonl``,
        ``samples_index.jsonl``, ``stats.json``, ``quality_report.json``, and
        ``splits/<name>.jsonl`` (one per configured split) to the output
        directory.
@@ -35,6 +40,9 @@ from typing import Any
 
 from src.data.dataset_alignment import AlignmentResult, check_alignment
 from src.data.dataset_discovery import discover_episodes
+from src.data.dataset_duplicates import find_duplicate_frames
+from src.data.dataset_io import read_jsonl_records
+from src.data.dataset_outliers import OutlierThresholds, check_outliers
 from src.data.dataset_schemas import (
     DATASET_SCHEMA_VERSION,
     DatasetManifest,
@@ -88,6 +96,10 @@ def build_dataset(
     min_episode_ticks: int = 1,
     require_valid: bool = True,
     allow_partial_alignment: bool = False,
+    outlier_detection: bool = True,
+    outlier_thresholds: OutlierThresholds | None = None,
+    duplicate_detection: bool = True,
+    steering_histogram_bins: int = 10,
 ) -> DatasetManifest:
     """Build the Phase 3 dataset index from Phase 2 episodes.
 
@@ -117,6 +129,19 @@ def build_dataset(
             default. If True, such episodes are included with samples
             truncated to their usable prefix, and the truncation is
             recorded in the quality report.
+        outlier_detection: If True (default), check every discovered
+            episode for steering spikes and stuck throttle (see
+            :mod:`src.data.dataset_outliers`) and record findings as
+            quality-report warnings. Never affects inclusion.
+        outlier_thresholds: Thresholds for outlier detection. Defaults to
+            :class:`~src.data.dataset_outliers.OutlierThresholds`'s own
+            defaults when None.
+        duplicate_detection: If True (default), hash every included
+            sample's frame and record exact duplicates (see
+            :mod:`src.data.dataset_duplicates`) as quality-report warnings.
+            Never affects inclusion.
+        steering_histogram_bins: Number of equal-width bins for the
+            informational steering-angle histogram in ``stats.json``.
 
     Returns:
         The :class:`~src.data.dataset_schemas.DatasetManifest` describing
@@ -126,6 +151,7 @@ def build_dataset(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     resolved_dataset_id = dataset_id or output_dir.name
+    resolved_thresholds = outlier_thresholds or OutlierThresholds()
 
     log.info("dataset_builder.start", raw_episodes_dir=str(raw_episodes_dir),
              dataset_id=resolved_dataset_id)
@@ -133,6 +159,7 @@ def build_dataset(
     validator = EpisodeValidator()
     issues: list[QualityIssue] = []
     pending: list[_PendingEpisode] = []
+    episodes_with_outliers = 0
 
     for episode_dir in discover_episodes(raw_episodes_dir):
         episode_id = episode_dir.name
@@ -175,6 +202,14 @@ def build_dataset(
                     ),
                 ))
 
+        if outlier_detection:
+            outliers = check_outliers(episode_dir, resolved_thresholds)
+            if outliers.issues:
+                episodes_with_outliers += 1
+                for issue in outliers.issues:
+                    issues.append(QualityIssue(episode_id=episode_id, severity="warning",
+                                                message=issue))
+
         pending.append(_PendingEpisode(
             episode_dir=episode_dir, episode_id=episode_id, meta=meta,
             validation=validation, alignment=alignment,
@@ -215,7 +250,21 @@ def build_dataset(
                 _build_samples(p.episode_dir, p.episode_id, p.alignment.usable_tick_count, split)
             )
 
-    stats = compute_statistics(episode_entries, sample_records)
+    duplicate_groups = find_duplicate_frames(sample_records) if duplicate_detection else []
+    for group in duplicate_groups:
+        preview = ", ".join(group.sample_ids[:5])
+        suffix = f" (+{len(group.sample_ids) - 5} more)" if len(group.sample_ids) > 5 else ""
+        cross_episode = len(group.episode_ids) > 1
+        issues.append(QualityIssue(
+            episode_id=DATASET_LEVEL_ISSUE if cross_episode else group.episode_ids[0],
+            severity="warning",
+            message=(
+                f"{len(group.sample_ids)} samples share identical frame content"
+                f" across {len(group.episode_ids)} episode(s): {preview}{suffix}"
+            ),
+        ))
+
+    stats = compute_statistics(episode_entries, sample_records, steering_histogram_bins)
     _append_split_coverage_issues(issues, split_ratios, stats.split_counts, stats.sample_count)
 
     created_at = datetime.now(tz=timezone.utc).isoformat()
@@ -233,6 +282,8 @@ def build_dataset(
         episodes_excluded=len(episode_entries) - included_count,
         episodes_misaligned=misaligned_count,
         episodes_truncated=truncated_count,
+        episodes_with_outliers=episodes_with_outliers,
+        duplicate_frame_groups=len(duplicate_groups),
         issues=issues,
     )
 
@@ -252,6 +303,9 @@ def build_dataset(
         split_ratios=dict(split_ratios),
         split_seed=split_seed,
         allow_partial_alignment=allow_partial_alignment,
+        outlier_detection_enabled=outlier_detection,
+        outlier_thresholds=resolved_thresholds.to_dict() if outlier_detection else None,
+        duplicate_detection_enabled=duplicate_detection,
         episodes_index_path=EPISODES_INDEX_FILENAME,
         samples_index_path=SAMPLES_INDEX_FILENAME,
         quality_report_path=QUALITY_REPORT_FILENAME,
@@ -286,6 +340,8 @@ def build_dataset(
         samples=len(sample_records),
         misaligned=misaligned_count,
         truncated=truncated_count,
+        outliers=episodes_with_outliers,
+        duplicate_groups=len(duplicate_groups),
     )
     return manifest
 
@@ -370,8 +426,8 @@ def _build_samples(
     if usable_tick_count == 0:
         return []
 
-    controls = _read_jsonl(episode_dir / "controls.jsonl")[:usable_tick_count]
-    telemetry = _read_jsonl(episode_dir / "telemetry.jsonl")[:usable_tick_count]
+    controls = read_jsonl_records(episode_dir / "controls.jsonl")[:usable_tick_count]
+    telemetry = read_jsonl_records(episode_dir / "telemetry.jsonl")[:usable_tick_count]
     camera_dir = episode_dir / "frames" / "front_camera"
 
     samples: list[SampleRecord] = []
@@ -391,30 +447,6 @@ def _build_samples(
             split=split,
         ))
     return samples
-
-
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    """Parse a JSONL file into a list of dicts, stopping at the first bad line.
-
-    Args:
-        path: Path to a ``.jsonl`` file.
-
-    Returns:
-        List of parsed records in file order. Empty if the file is missing.
-    """
-    if not path.exists():
-        return []
-    records: list[dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        try:
-            record = json.loads(stripped)
-        except json.JSONDecodeError:
-            break
-        records.append(record)
-    return records
 
 
 def _write_jsonl(path: Path, records: Iterable[dict[str, Any]]) -> None:

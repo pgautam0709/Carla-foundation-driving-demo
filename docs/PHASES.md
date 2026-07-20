@@ -13,7 +13,7 @@ The project is structured as seven phases, each building on the previous. Each p
 | **0** | Platform Scaffold | ✅ Complete | Diagnostics, config, docs, test skeleton |
 | **1** | Simulation Bootstrap | ✅ Complete | Portable runtime, smoke test, 4 profiles, 58 unit tests |
 | **2** | Data Collection | ✅ Complete | Expert episode pipeline: PNG frames + JSONL, 121 unit tests |
-| **3** | Dataset Engineering | 🟡 In Progress | 3a Dataset Engineering ✅ · 3b Dataset Hardening 🔲 Planned |
+| **3** | Dataset Engineering | ✅ Complete | 3a Dataset Engineering ✅ · 3b Dataset Hardening ✅ |
 | **4** | Model Training | 🔲 Planned | Trained BC-CNN, TensorBoard logs |
 | **5** | Evaluation & XAI | 🔲 Planned | Closed-loop metrics, attention maps |
 | **6** | Deployment Packaging | 🔲 Planned | ONNX + TensorRT export, inference script |
@@ -186,20 +186,44 @@ trust, without writing any training code yet.
 
 ### Phase 3b — Dataset Hardening
 
-**Status: 🔲 Planned**
+**Status: ✅ Complete**
 
 **Goal:** Improve dataset quality and trustworthiness further — **still no
-model training code**. Candidate scope (to be refined before starting):
-- Outlier/anomaly detection on control and telemetry signals (e.g. steering
-  spikes, stuck-throttle episodes)
-- Duplicate or near-duplicate frame detection across episodes
-- Class-balance reporting for steering angle distribution, to inform
-  (but not perform) future sampling strategy
-- `validate_episode.py --fix-manifest` follow-through: writing back
-  `validation_status` after validation
+model training code**.
 
-**Explicitly out of scope for 3b:** anything that trains, evaluates, or
-exports a model. That work is Phase 4 onward.
+**Deliverables:**
+- [`src/data/dataset_outliers.py`](../src/data/dataset_outliers.py) — steering-spike and stuck-throttle detection (informational only)
+- [`src/data/dataset_duplicates.py`](../src/data/dataset_duplicates.py) — exact (byte-hash) duplicate frame detection, within and across episodes
+- [`src/data/dataset_io.py`](../src/data/dataset_io.py) — shared JSONL helper (deduplicated from `dataset_builder.py`)
+- Steering-angle histogram in `stats.json` (`src/data/dataset_statistics.py`) — informational class-balance reporting, no resampling
+- `write_validation_status()` in [`src/data/validation.py`](../src/data/validation.py) + `--fix-manifest` flag on [`scripts/validate_episode.py`](../scripts/validate_episode.py)
+- `config/default.yaml` — new `outlier_detection:` / `duplicate_detection:` / `steering_histogram_bins` keys
+- `Makefile` — `make fix-manifest`
+- [`docs/PHASE3B_DATASET_HARDENING.md`](PHASE3B_DATASET_HARDENING.md)
+- [`docs/ADR/0003-dataset-hardening-design.md`](ADR/0003-dataset-hardening-design.md)
+- 28 new unit tests across `TestOutlierDetection`, `TestDuplicateDetection`, extended `TestStatistics`, extended `TestDatasetBuilder`/`TestQualityReport`/CLI tests, and `TestFixManifest`
+
+**Verified Results:**
+
+| Check | Result |
+|-------|--------|
+| `make lint` | ✅ All checks passed |
+| `make type-check` | ✅ No issues in any Phase 3 file |
+| `make test` | ✅ **203/203 unit tests pass** (no CARLA required) |
+| `make dataset-dry-run` | ✅ Hardening checks run by default, end to end |
+
+**Success Criteria:**
+- ✅ Outlier and duplicate findings are visible in `quality_report.json` / `inspect_dataset.py` and never exclude data
+- ✅ Steering histogram is informational only — nothing in this codebase resamples or reweights based on it
+- ✅ `--fix-manifest` writes `validation_status` back without disturbing other manifest fields
+- ✅ No CARLA, Docker, GPU, or PyTorch dependency anywhere in this layer
+- ✅ Phase 0, 1, 2, and 3a behavior is unchanged
+
+**Known limitation carried forward:** duplicate detection is exact
+(byte-hash) only; near-duplicate (perceptually similar) detection was
+deliberately not implemented to avoid adding an image-processing dependency
+to a path that has been dependency-light since Phase 3a — see
+`docs/PHASE3B_DATASET_HARDENING.md` and ADR 0003.
 
 ---
 

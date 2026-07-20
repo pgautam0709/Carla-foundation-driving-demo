@@ -130,6 +130,19 @@ dataset_engineering:
     val: 0.1
     test: 0.1
 
+  # ── Phase 3b: dataset hardening ──────────────────────────────────────────────
+  # Informational only — never excludes an episode or sample. Findings are
+  # folded into quality_report.json (outlier/duplicate) or stats.json (histogram).
+  outlier_detection:
+    enabled: true
+    steering_spike_delta: 0.6       # per-tick |Δsteer| above this is flagged
+    stuck_throttle_min: 0.9         # throttle at/above this counts as "full throttle"
+    stuck_speed_max_kph: 1.0        # speed at/below this counts as "not moving"
+    stuck_throttle_min_ticks: 40    # consecutive ticks before it's flagged as stuck
+  duplicate_detection:
+    enabled: true                   # hash every included frame (adds I/O cost on large datasets)
+  steering_histogram_bins: 10       # equal-width bins across [-1.0, 1.0] in stats.json
+
 # ── Training ──────────────────────────────────────────────────────────────────
 training:
   data_dir: "data/processed"

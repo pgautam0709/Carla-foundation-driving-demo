@@ -157,6 +157,26 @@ class ValueStats:
 
 
 @dataclasses.dataclass
+class HistogramBin:
+    """One bin of a fixed-width histogram over a signal's value range.
+
+    Args:
+        range_min: Inclusive lower bound of the bin.
+        range_max: Exclusive upper bound of the bin (inclusive for the last
+            bin, to capture values exactly at the signal's maximum).
+        count: Number of samples whose value falls in this bin.
+    """
+
+    range_min: float
+    range_max: float
+    count: int
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable dict."""
+        return dataclasses.asdict(self)
+
+
+@dataclasses.dataclass
 class DatasetStatistics:
     """Aggregate statistics over all included samples and episodes.
 
@@ -170,6 +190,10 @@ class DatasetStatistics:
         brake: Summary statistics for the brake signal, or None.
         steer: Summary statistics for the steer signal, or None.
         speed_kph: Summary statistics for the speed_kph signal, or None.
+        steering_histogram: Fixed-width histogram of the steer signal over
+            ``[-1.0, 1.0]``, informational only — it does not drive any
+            resampling or class-balancing in this phase. Empty when
+            ``sample_count`` is 0.
     """
 
     episode_count: int
@@ -180,6 +204,7 @@ class DatasetStatistics:
     brake: ValueStats | None
     steer: ValueStats | None
     speed_kph: ValueStats | None
+    steering_histogram: list[HistogramBin]
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable dict (nested dataclasses expanded)."""
@@ -228,6 +253,14 @@ class QualityReport:
         episodes_truncated: Number included despite being misaligned — i.e.
             samples were generated only for the shared usable prefix,
             because ``allow_partial_alignment`` was enabled.
+        episodes_with_outliers: Number of episodes with at least one
+            steering-spike or stuck-throttle finding (see
+            :mod:`src.data.dataset_outliers`). Purely informational — never
+            affects inclusion.
+        duplicate_frame_groups: Number of distinct sets of samples (within
+            one episode or across episodes) whose frame files are
+            byte-for-byte identical (see :mod:`src.data.dataset_duplicates`).
+            Purely informational — never affects inclusion.
         issues: Ordered list of all :class:`QualityIssue` records.
     """
 
@@ -240,6 +273,8 @@ class QualityReport:
     episodes_excluded: int
     episodes_misaligned: int
     episodes_truncated: int
+    episodes_with_outliers: int
+    duplicate_frame_groups: int
     issues: list[QualityIssue]
 
     def to_dict(self) -> dict[str, Any]:
@@ -272,6 +307,12 @@ class DatasetManifest:
         split_seed: Seed used for deterministic split assignment.
         allow_partial_alignment: Whether misaligned episodes were truncated
             and included rather than excluded outright.
+        outlier_detection_enabled: Whether steering-spike/stuck-throttle
+            detection (:mod:`src.data.dataset_outliers`) ran for this build.
+        outlier_thresholds: The thresholds used for outlier detection, or
+            None if ``outlier_detection_enabled`` is False.
+        duplicate_detection_enabled: Whether exact duplicate-frame detection
+            (:mod:`src.data.dataset_duplicates`) ran for this build.
         episodes_index_path: Filename of the episode index (relative to
             ``output_dir``).
         samples_index_path: Filename of the sample index (relative to
@@ -300,6 +341,9 @@ class DatasetManifest:
     split_ratios: dict[str, float]
     split_seed: int
     allow_partial_alignment: bool
+    outlier_detection_enabled: bool
+    outlier_thresholds: dict[str, float] | None
+    duplicate_detection_enabled: bool
     episodes_index_path: str
     samples_index_path: str
     quality_report_path: str

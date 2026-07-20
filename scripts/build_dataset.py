@@ -25,6 +25,12 @@ counts or tick numbering disagree is excluded, not silently truncated. Pass
 ``--allow-partial-alignment`` to include such episodes truncated to their
 usable prefix instead (recorded in quality_report.json either way).
 
+Phase 3b hardening also runs by default and is purely informational (never
+excludes anything): steering-spike/stuck-throttle detection and exact
+duplicate-frame detection, both folded into quality_report.json, plus a
+steering-angle histogram in stats.json. Disable either check with
+``--no-outlier-detection`` / ``--no-duplicate-detection`` if not needed.
+
 No CARLA, Docker, GPU, or PyTorch dependency — this only reads the flat
 files Phase 2 already wrote to disk.
 
@@ -61,6 +67,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from src.data.dataset_builder import build_dataset  # noqa: E402
+from src.data.dataset_outliers import OutlierThresholds  # noqa: E402
 from src.utils.config import get_nested, load_config  # noqa: E402
 from src.utils.logging import configure_logging, get_logger  # noqa: E402
 
@@ -93,6 +100,12 @@ log = get_logger(__name__)
 @click.option("--allow-partial-alignment/--no-allow-partial-alignment", default=None,
               help="Include misaligned episodes truncated to their usable prefix"
                    " instead of excluding them (default: false — strict alignment).")
+@click.option("--outlier-detection/--no-outlier-detection", default=None,
+              help="Flag steering spikes and stuck throttle per episode"
+                   " (default: true). Informational only — never excludes an episode.")
+@click.option("--duplicate-detection/--no-duplicate-detection", default=None,
+              help="Flag samples with byte-identical frame content"
+                   " (default: true). Informational only — never excludes a sample.")
 def main(
     profile: str | None,
     raw_episodes_dir: Path | None,
@@ -102,6 +115,8 @@ def main(
     min_episode_ticks: int | None,
     require_valid: bool | None,
     allow_partial_alignment: bool | None,
+    outlier_detection: bool | None,
+    duplicate_detection: bool | None,
 ) -> None:
     cfg = load_config(profile=profile)
     configure_logging(
@@ -126,6 +141,22 @@ def main(
     )
     split_ratios = de.get("split_ratios", {"train": 0.8, "val": 0.1, "test": 0.1})
 
+    od_cfg = de.get("outlier_detection", {})
+    dd_cfg = de.get("duplicate_detection", {})
+    resolved_outlier_detection = (
+        outlier_detection if outlier_detection is not None else od_cfg.get("enabled", True)
+    )
+    resolved_duplicate_detection = (
+        duplicate_detection if duplicate_detection is not None else dd_cfg.get("enabled", True)
+    )
+    resolved_thresholds = OutlierThresholds(
+        steering_spike_delta=od_cfg.get("steering_spike_delta", 0.6),
+        stuck_throttle_min=od_cfg.get("stuck_throttle_min", 0.9),
+        stuck_speed_max_kph=od_cfg.get("stuck_speed_max_kph", 1.0),
+        stuck_throttle_min_ticks=od_cfg.get("stuck_throttle_min_ticks", 40),
+    )
+    resolved_histogram_bins = de.get("steering_histogram_bins", 10)
+
     output_override = output_dir or de.get("output_dir")
     if output_override:
         resolved_out = Path(output_override)
@@ -147,9 +178,14 @@ def main(
         min_episode_ticks=resolved_min_ticks,
         require_valid=resolved_require_valid,
         allow_partial_alignment=resolved_allow_partial,
+        outlier_detection=resolved_outlier_detection,
+        outlier_thresholds=resolved_thresholds,
+        duplicate_detection=resolved_duplicate_detection,
+        steering_histogram_bins=resolved_histogram_bins,
     )
     stats = json.loads((resolved_out / manifest.statistics_path).read_text(encoding="utf-8"))
     split_counts = stats["split_counts"]
+    quality = json.loads((resolved_out / manifest.quality_report_path).read_text(encoding="utf-8"))
 
     click.echo(f"  {_ok(f'Dataset built: {resolved_out}')}")
     click.echo(f"     Dataset ID: {manifest.dataset_id}")
@@ -159,6 +195,9 @@ def main(
     click.echo(f"     Splits   : train={split_counts['train']}"
                f"  val={split_counts['val']}"
                f"  test={split_counts['test']}")
+    if resolved_outlier_detection or resolved_duplicate_detection:
+        click.echo(f"     Hardening: {quality['episodes_with_outliers']} episode(s) with outliers"
+                   f"  ·  {quality['duplicate_frame_groups']} duplicate frame group(s)")
 
     if manifest.episode_count_excluded:
         click.echo(
