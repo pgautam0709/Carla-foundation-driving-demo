@@ -66,6 +66,8 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from scripts._format import ok as _ok  # noqa: E402
+from scripts._format import warn as _warn  # noqa: E402
 from src.data.dataset_builder import build_dataset  # noqa: E402
 from src.data.dataset_outliers import OutlierThresholds  # noqa: E402
 from src.utils.config import get_nested, load_config  # noqa: E402
@@ -212,14 +214,6 @@ def _generate_dataset_id() -> str:
 
 
 # ── Display helpers ────────────────────────────────────────────────────────────
-
-def _ok(msg: str) -> str:
-    return f"\033[32m[ OK ]\033[0m  {msg}"
-
-
-def _warn(msg: str) -> str:
-    return f"\033[33m[WARN]\033[0m  {msg}"
-
 
 def _print_header(
     raw_dir: Path, out_dir: Path, dataset_id: str, split_ratios: dict[str, float], seed: int,

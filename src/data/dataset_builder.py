@@ -228,6 +228,7 @@ def build_dataset(
             episode_id=p.episode_id,
             episode_dir=str(p.episode_dir),
             town=p.meta.get("town"),
+            weather=p.meta.get("weather_preset"),
             route_name=p.meta.get("route_name"),
             collection_mode=p.meta.get("collection_mode"),
             created_at=p.meta.get("created_at"),
@@ -251,6 +252,7 @@ def build_dataset(
             )
 
     duplicate_groups = find_duplicate_frames(sample_records) if duplicate_detection else []
+    duplicate_sample_count = sum(len(group.sample_ids) for group in duplicate_groups)
     for group in duplicate_groups:
         preview = ", ".join(group.sample_ids[:5])
         suffix = f" (+{len(group.sample_ids) - 5} more)" if len(group.sample_ids) > 5 else ""
@@ -285,6 +287,7 @@ def build_dataset(
         episodes_truncated=truncated_count,
         episodes_with_outliers=episodes_with_outliers,
         duplicate_frame_groups=len(duplicate_groups),
+        duplicate_sample_count=duplicate_sample_count,
         issues=issues,
     )
 

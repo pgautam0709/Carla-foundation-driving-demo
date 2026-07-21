@@ -33,6 +33,8 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from scripts._format import fail as _fail  # noqa: E402
+from src.quality.artifacts import resolve_latest_dataset_dir  # noqa: E402
 from src.utils.config import load_config  # noqa: E402
 
 
@@ -58,7 +60,7 @@ def main(profile: str | None, dataset_dir: Path | None, verbose: bool) -> None:
         resolved_dir = Path(de["output_dir"])
     else:
         datasets_dir = Path(de.get("datasets_dir", "data/processed/datasets"))
-        latest = _resolve_latest_dataset_dir(datasets_dir)
+        latest = resolve_latest_dataset_dir(datasets_dir)
         if latest is None:
             click.echo(_fail(f"No dataset found under {datasets_dir}"), err=True)
             click.echo("    Run: make build-dataset", err=True)
@@ -82,25 +84,6 @@ def main(profile: str | None, dataset_dir: Path | None, verbose: bool) -> None:
     )
 
     _print_summary(resolved_dir, manifest, stats, quality, verbose)
-
-
-def _resolve_latest_dataset_dir(datasets_dir: Path) -> Path | None:
-    """Return the most recently modified immediate subdirectory of *datasets_dir*.
-
-    Args:
-        datasets_dir: Parent directory containing one subdirectory per
-            dataset build (see ``dataset_engineering.datasets_dir``).
-
-    Returns:
-        The most recently modified subdirectory, or None if *datasets_dir*
-        does not exist or contains no subdirectories.
-    """
-    if not datasets_dir.is_dir():
-        return None
-    candidates = [p for p in datasets_dir.iterdir() if p.is_dir()]
-    if not candidates:
-        return None
-    return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
 # ── Rendering ──────────────────────────────────────────────────────────────────
@@ -188,10 +171,6 @@ def _print_summary(
 
     print("─" * width)
     print()
-
-
-def _fail(msg: str) -> str:
-    return f"\033[31m[FAIL]\033[0m  {msg}"
 
 
 if __name__ == "__main__":

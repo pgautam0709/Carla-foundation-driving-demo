@@ -14,6 +14,7 @@ The project is structured as seven phases, each building on the previous. Each p
 | **1** | Simulation Bootstrap | ✅ Complete | Portable runtime, smoke test, 4 profiles, 58 unit tests |
 | **2** | Data Collection | ✅ Complete | Expert episode pipeline: PNG frames + JSONL, 121 unit tests |
 | **3** | Dataset Engineering | ✅ Complete | 3a Dataset Engineering ✅ · 3b Dataset Hardening ✅ |
+| **3.5** | Engineering Loop | ✅ Complete | Quality scoring, versioning, regression detection, coverage planning, dashboard |
 | **4** | Model Training | 🔲 Planned | Trained BC-CNN, TensorBoard logs |
 | **5** | Evaluation & XAI | 🔲 Planned | Closed-loop metrics, attention maps |
 | **6** | Deployment Packaging | 🔲 Planned | ONNX + TensorRT export, inference script |
@@ -224,6 +225,67 @@ model training code**.
 deliberately not implemented to avoid adding an image-processing dependency
 to a path that has been dependency-light since Phase 3a — see
 `docs/PHASE3B_DATASET_HARDENING.md` and ADR 0003.
+
+---
+
+## Phase 3.5 — Engineering Loop
+
+**Status: ✅ Complete**
+
+**Goal:** Turn the Phase 3 dataset builder from a one-shot pipeline into a
+system that can be operated over time — score every build, version it,
+compare it to what came before, catch regressions before training,
+plan what data to collect next, and give a human a single page to review.
+**Still no model training code** — no PyTorch, no BC-CNN, no trainer.
+
+**Deliverables:**
+- [`src/quality/schemas.py`](../src/quality/schemas.py) — `Artifact`, `MetricResult`, `QualityScore`, `LineageEdge`, `VersionRecord`, `RegressionFinding`, `RegressionReport`, `CoverageCell`, `CoverageResult`, `CoverageRecommendation`, `ReviewReport`, `GateCheckResult`, `GateReport`
+- [`src/quality/config.py`](../src/quality/config.py) — `QualityEngineeringConfig` and eight nested dataclasses, all config-driven, no magic numbers
+- [`src/quality/registry.py`](../src/quality/registry.py) — generic `CategoryRegistry[T]` shared by metric and dashboard-section registration
+- [`src/quality/artifacts.py`](../src/quality/artifacts.py) — `DatasetArtifact` loader, hashing, backward-compatible readers
+- [`src/quality/metrics.py`](../src/quality/metrics.py) / [`dataset_metrics.py`](../src/quality/dataset_metrics.py) — `Metric` ABC + six concrete dataset metrics (synchronization, coverage, metadata, outliers, duplicates, steering balance)
+- [`src/quality/scoring.py`](../src/quality/scoring.py) — weighted-mean combination, letter grading
+- [`src/quality/coverage.py`](../src/quality/coverage.py) — town×weather target matrix, ranked collection recommendations
+- [`src/quality/versioning.py`](../src/quality/versioning.py) — `VersionRecord` computation, changelog generation
+- [`src/quality/lineage.py`](../src/quality/lineage.py) — cross-artifact-type derivation graph (Phase 4+ ready)
+- [`src/quality/regression.py`](../src/quality/regression.py) — artifact-agnostic build-over-build comparison
+- [`src/quality/review.py`](../src/quality/review.py) — star rating, strengths/weaknesses
+- [`src/quality/gates.py`](../src/quality/gates.py) — training-readiness pass/fail checks
+- [`src/quality/dashboard.py`](../src/quality/dashboard.py) — self-contained HTML report, seven pluggable sections
+- [`scripts/dataset_version.py`](../scripts/dataset_version.py), [`dataset_quality.py`](../scripts/dataset_quality.py), [`dataset_review.py`](../scripts/dataset_review.py), [`recommend_data.py`](../scripts/recommend_data.py), [`compare_datasets.py`](../scripts/compare_datasets.py), [`dataset_dashboard.py`](../scripts/dataset_dashboard.py) — six new CLIs, plus [`scripts/_format.py`](../scripts/_format.py) for shared console/dataset-resolution helpers
+- `config/default.yaml` — new `quality_engineering:` section (scoring/coverage/regression/review/gates/dashboard/versioning/lineage)
+- `Makefile` — `make version`, `quality`, `review`, `recommend-data`, `compare-data`, `dashboard`, `quality-loop-dry-run`
+- [`docs/ENGINEERING_LOOPS.md`](ENGINEERING_LOOPS.md), [`docs/QUALITY_SYSTEM.md`](QUALITY_SYSTEM.md), [`docs/DATASET_VERSIONING.md`](DATASET_VERSIONING.md), [`docs/REGRESSION_DETECTION.md`](REGRESSION_DETECTION.md), [`docs/ARCHITECTURE_DECISIONS.md`](ARCHITECTURE_DECISIONS.md)
+- [`docs/ADR/0004](ADR/0004-engineering-loop-architecture.md) through [0011`](ADR/0011-experiment-tracking-lineage.md) — eight new ADRs
+- [`tests/unit/test_quality_engineering.py`](../tests/unit/test_quality_engineering.py) — 121 new unit tests (14 test classes)
+
+**Verified Results:**
+
+| Check | Result |
+|-------|--------|
+| `make lint` | ✅ All checks passed |
+| `make type-check` | ✅ No issues in any Phase 3.5 file |
+| `make test` | ✅ **328/328 unit tests pass** (no CARLA required) |
+| `pytest --cov=src.quality` | ✅ **99% coverage** on all of `src/quality/` (target: ≥ 95%) |
+| `make quality-loop-dry-run` | ✅ version → quality → review → recommend → dashboard, end to end, no CARLA |
+
+**Success Criteria:**
+- ✅ Every score, threshold, weight, and file name is config-driven — no magic numbers in `src/quality/`
+- ✅ A dataset's quality score, coverage, and gate verdict are computed the same way whether the dataset has zero, one, or many prior versions
+- ✅ Regression detection works with no baseline (everything reported informational) and does not require every dataset to be versioned first
+- ✅ The dashboard is a single self-contained HTML file — no server, no external JS/CSS dependency, no charting library
+- ✅ `src/quality/` reads Phase 3 artifacts and writes its own new files; it never mutates a Phase 3 file and no Phase 3 code depends on it
+- ✅ No CARLA, Docker, GPU, or PyTorch dependency anywhere in this layer
+- ✅ Phase 0 through 3b behavior is unchanged
+
+**Known limitation carried forward:** `lineage.py`'s cross-artifact-type
+graph has nothing to trace yet — datasets have no parents, since no
+earlier phase produces a dataset from another artifact. It is exercised
+in tests via synthetic lineage edges and is expected to become load-
+bearing once Phase 4 records "trained from dataset X." See
+`docs/ARCHITECTURE_DECISIONS.md` for the one accepted follow-up
+(`lineage.py`'s possible relocation) and the three review suggestions
+deliberately deferred rather than implemented in this phase.
 
 ---
 

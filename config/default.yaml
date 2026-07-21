@@ -143,6 +143,66 @@ dataset_engineering:
     enabled: true                   # hash every included frame (adds I/O cost on large datasets)
   steering_histogram_bins: 10       # equal-width bins across [-1.0, 1.0] in stats.json
 
+# ── Phase 3.5 — Engineering loop ────────────────────────────────────────────────
+# Every value here has a matching dataclass default in src/quality/config.py —
+# any key (or the whole section) omitted here falls back to that default.
+quality_engineering:
+  scoring:
+    weights:                        # relative; normalized internally, need not sum to 1
+      synchronization: 0.25
+      coverage: 0.20
+      metadata: 0.20
+      outliers: 0.15
+      duplicates: 0.10
+      steering_balance: 0.10
+    grade_thresholds: {A: 90.0, B: 80.0, C: 70.0, D: 60.0}   # below D's floor = "F"
+    steering_balance_qualitative_thresholds: {Good: 80.0, Fair: 60.0}
+
+  coverage:
+    target_towns: ["Town01", "Town02", "Town03", "Town04", "Town05", "Town10"]
+    target_weather: ["ClearNoon", "CloudyNoon", "WetNoon", "HardRainNoon", "ClearSunset", "ClearNight"]
+    min_episodes_per_cell: 3        # episodes required before a (town, weather) cell counts as "met"
+    max_recommendations: 5          # cap on recommend_collection()'s ranked output
+
+  regression:
+    warning_thresholds:
+      sample_count_drop_pct: 10.0
+      quality_score_drop_pts: 5.0
+      duplicate_rate_increase_pct: 2.0
+      outlier_rate_increase_pct: 2.0
+    failure_thresholds:
+      sample_count_drop_pct: 40.0
+      quality_score_drop_pts: 15.0
+      duplicate_rate_increase_pct: 10.0
+      outlier_rate_increase_pct: 10.0
+      town_or_weather_cell_lost: true   # any previously-covered cell dropping to zero -> failure
+
+  review:
+    strength_threshold: 80.0        # metric raw_score at/above this is called out as a strength
+    weakness_threshold: 50.0        # metric raw_score below this is called out as a weakness
+
+  gates:
+    min_quality_score: 70.0
+    min_coverage_score: 50.0
+    min_steering_balance_score: 50.0
+    block_on_regression_severity: "failure"   # "failure" | "warning"
+    require_regression_baseline: false        # first dataset ever built should not fail for lack of history
+
+  dashboard:
+    output_dir: "outputs/dashboard"
+    trend_window: 10                # max historical versions shown in the Quality Trend section
+
+  versioning:
+    version_filename: "version.json"
+    changelog_filename: "CHANGELOG.md"
+
+  lineage:
+    artifact_roots:
+      dataset: "data/processed/datasets"    # exists today (Phase 3a)
+      model: "outputs/training"             # Phase 4 — matches training.output_dir below
+      evaluation: "outputs/evaluation"      # Phase 5 — reserved, not created yet
+      deployment: "outputs/deployment"      # Phase 6 — reserved, not created yet
+
 # ── Training ──────────────────────────────────────────────────────────────────
 training:
   data_dir: "data/processed"

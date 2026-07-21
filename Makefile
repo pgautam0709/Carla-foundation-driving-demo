@@ -33,6 +33,7 @@ DATASET_DIR ?= $(patsubst %/,%,$(_LATEST_DATASET))
         smoke carla-docker carla-windows-help \
         collect collect-dry-run validate-episode fix-manifest \
         build-dataset inspect-dataset dataset-dry-run \
+        quality review compare-data dashboard recommend-data version quality-loop-dry-run \
         train clean
 
 help: ## Show this help message
@@ -160,6 +161,34 @@ dataset-dry-run: ## End-to-end Phase 3 smoke test: collect + build + inspect (no
 		--dataset-id dry_run_dataset
 	$(PYTHON) scripts/inspect_dataset.py --profile $(PROFILE) \
 		--dataset-dir data/processed/datasets/dry_run_dataset --verbose
+
+# ── Phase 3.5 — engineering loop (quality, versioning, regression, dashboard) ──
+
+quality: ## Compute quality score + training-gate verdict (set DATASET_DIR=<path>; default: most recent)
+	$(PYTHON) scripts/dataset_quality.py --profile $(PROFILE) $(if $(DATASET_DIR),--dataset-dir $(DATASET_DIR))
+
+review: ## Print a deterministic star review (set DATASET_DIR=<path>; default: most recent)
+	$(PYTHON) scripts/dataset_review.py --profile $(PROFILE) $(if $(DATASET_DIR),--dataset-dir $(DATASET_DIR))
+
+compare-data: ## Compare two datasets and report regression findings (set CANDIDATE=<path> BASELINE=<path>)
+	$(PYTHON) scripts/compare_datasets.py --profile $(PROFILE) \
+		$(if $(CANDIDATE),--candidate $(CANDIDATE)) $(if $(BASELINE),--baseline $(BASELINE))
+
+dashboard: ## Generate the self-contained HTML engineering dashboard (set DATASET_DIR=<path>; default: most recent)
+	$(PYTHON) scripts/dataset_dashboard.py --profile $(PROFILE) $(if $(DATASET_DIR),--dataset-dir $(DATASET_DIR))
+
+recommend-data: ## Print ranked (town, weather) collection recommendations (set DATASET_DIR=<path>; default: most recent)
+	$(PYTHON) scripts/recommend_data.py --profile $(PROFILE) $(if $(DATASET_DIR),--dataset-dir $(DATASET_DIR))
+
+version: ## Write version.json + CHANGELOG.md for a dataset (set DATASET_DIR=<path>; default: most recent)
+	$(PYTHON) scripts/dataset_version.py --profile $(PROFILE) $(if $(DATASET_DIR),--dataset-dir $(DATASET_DIR))
+
+quality-loop-dry-run: ## End-to-end Phase 3.5 smoke test: version + quality + review + recommend + dashboard (no CARLA required)
+	$(PYTHON) scripts/dataset_version.py --profile $(PROFILE) $(if $(DATASET_DIR),--dataset-dir $(DATASET_DIR))
+	$(PYTHON) scripts/dataset_quality.py --profile $(PROFILE) $(if $(DATASET_DIR),--dataset-dir $(DATASET_DIR)) || true
+	$(PYTHON) scripts/dataset_review.py --profile $(PROFILE) $(if $(DATASET_DIR),--dataset-dir $(DATASET_DIR))
+	$(PYTHON) scripts/recommend_data.py --profile $(PROFILE) $(if $(DATASET_DIR),--dataset-dir $(DATASET_DIR))
+	$(PYTHON) scripts/dataset_dashboard.py --profile $(PROFILE) $(if $(DATASET_DIR),--dataset-dir $(DATASET_DIR))
 
 train: ## Run model training (requires collected data)
 	$(PYTHON) scripts/train.py --config $(CONFIG) --profile $(PROFILE)

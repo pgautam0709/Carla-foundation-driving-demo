@@ -51,9 +51,11 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for a full component diagram 
 | **1** | CARLA environment bootstrap & smoke test | ✅ Complete |
 | **2** | Expert data collection — RGB camera + autopilot | ✅ Complete |
 | **3a** | Dataset engineering — index, validate, split, quality report | ✅ Complete |
-| **3b** | Behavioural cloning model (BC-CNN) | 🔲 Planned |
-| **4** | Closed-loop evaluation + explainability | 🔲 Planned |
-| **5** | Deployment packaging (ONNX/TensorRT) | 🔲 Planned |
+| **3b** | Dataset hardening — outliers, duplicates, steering histogram | ✅ Complete |
+| **3.5** | Engineering loop — scoring, versioning, regression, dashboard | ✅ Complete |
+| **4** | Behavioural cloning model (BC-CNN) training | 🔲 Planned |
+| **5** | Closed-loop evaluation + explainability | 🔲 Planned |
+| **6** | Deployment packaging (ONNX/TensorRT) | 🔲 Planned |
 
 Full phase details: [`docs/PHASES.md`](docs/PHASES.md)
 
@@ -89,13 +91,21 @@ Full phase details: [`docs/PHASES.md`](docs/PHASES.md)
 │   ├── collect_expert_episode.py  # Phase 2 data collection (+ --dry-run)
 │   ├── validate_episode.py        # Phase 2 episode validation CLI
 │   ├── build_dataset.py           # Phase 3a dataset builder CLI
-│   └── inspect_dataset.py         # Phase 3a dataset inspector CLI
+│   ├── inspect_dataset.py         # Phase 3a dataset inspector CLI
+│   ├── dataset_version.py         # Phase 3.5 versioning CLI
+│   ├── dataset_quality.py         # Phase 3.5 quality score + gate CLI
+│   ├── dataset_review.py          # Phase 3.5 star review CLI
+│   ├── recommend_data.py          # Phase 3.5 coverage recommendation CLI
+│   ├── compare_datasets.py        # Phase 3.5 regression comparison CLI
+│   ├── dataset_dashboard.py       # Phase 3.5 HTML dashboard CLI
+│   └── _format.py                 # Shared console formatting + dataset resolution
 ├── src/                           # Source library
 │   ├── data/                      # Episode writers, schemas, validators, dataset pipeline
+│   ├── quality/                   # Phase 3.5 engineering loop — scoring, versioning, regression, dashboard
 │   ├── simulation/                # CARLA client, expert driver
-│   ├── models/                    # Model architectures (Phase 3b)
-│   ├── training/                  # Training loop (Phase 3b)
-│   ├── evaluation/                # Evaluation harness (Phase 4)
+│   ├── models/                    # Model architectures (Phase 4)
+│   ├── training/                  # Training loop (Phase 4)
+│   ├── evaluation/                # Evaluation harness (Phase 5)
 │   └── utils/                     # Config loader, structured logging
 └── tests/                         # Unit and integration tests
 ```
@@ -110,7 +120,7 @@ make setup             # Bootstrap Python environment
 make diagnose          # Check all dependencies
 make lint              # Run ruff linter
 make type-check        # Run mypy
-make test              # Unit tests (no CARLA needed)  — 157 passing
+make test              # Unit tests (no CARLA needed)  — 328 passing
 
 # Phase 1 — CARLA connectivity
 make smoke             # Connect to CARLA, run 100 ticks (requires CARLA server)
@@ -124,7 +134,19 @@ make validate-episode  # Validate the most recent episode
 make dataset-dry-run   # Build dataset from a dry-run episode (no CARLA required)
 make build-dataset     # Build dataset index from all Phase 2 episodes
 make inspect-dataset   # Print dataset summary and quality report
+
+# Phase 3.5 — Engineering loop
+make quality-loop-dry-run  # version + quality + review + recommend + dashboard, end to end
+make version            # Write version.json + CHANGELOG.md
+make quality             # Compute quality score + training-gate verdict
+make review               # Print a deterministic star review
+make recommend-data        # Ranked (town, weather) collection recommendations
+make compare-data           # Compare two datasets, report regression findings
+make dashboard                # Generate the self-contained HTML dashboard
 ```
+
+See [`docs/ENGINEERING_LOOPS.md`](docs/ENGINEERING_LOOPS.md) for the full
+Phase 3.5 loop, config keys, and file reference.
 
 ---
 

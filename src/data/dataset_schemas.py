@@ -10,6 +10,12 @@ format changes independently of the Phase 2 episode schema version.
 Schema version history:
     1.0 — Phase 3 initial: episodes_index.jsonl, samples_index.jsonl,
            dataset_manifest.json, quality_report.json.
+    1.1 — Phase 3.5: additive fields for the engineering loop
+           (docs/ADR/0004-engineering-loop-architecture.md Decision 6):
+           ``EpisodeIndexEntry.weather``, ``DatasetStatistics.weather``,
+           ``QualityReport.duplicate_sample_count``. No existing field
+           changed meaning; a 1.0 artifact remains readable by defaulting
+           the new fields to ``None``/``{}``/``0``.
 """
 
 from __future__ import annotations
@@ -18,7 +24,7 @@ import dataclasses
 from typing import Any
 
 # ── Schema version ─────────────────────────────────────────────────────────────
-DATASET_SCHEMA_VERSION: str = "1.0"
+DATASET_SCHEMA_VERSION: str = "1.1"
 
 
 # ── Per-episode index entry (written to episodes_index.jsonl) ──────────────────
@@ -31,6 +37,9 @@ class EpisodeIndexEntry:
         episode_id: Episode identifier (directory basename).
         episode_dir: Path to the episode directory, relative to the repo root.
         town: CARLA map name, or None if metadata.json could not be read.
+        weather: CARLA weather preset name (``metadata.json``'s
+            ``weather_preset``), or None if metadata.json could not be
+            read or predates this field (schema < 1.1).
         route_name: Route label, or None if metadata.json could not be read.
         collection_mode: ``"live"`` or ``"dry_run"``, or None if unknown.
         created_at: ISO 8601 creation timestamp from metadata.json, or None.
@@ -60,6 +69,7 @@ class EpisodeIndexEntry:
     episode_id: str
     episode_dir: str
     town: str | None
+    weather: str | None
     route_name: str | None
     collection_mode: str | None
     created_at: str | None
@@ -185,6 +195,10 @@ class DatasetStatistics:
         sample_count: Number of samples included in the dataset.
         split_counts: Sample counts per split.
         towns: Mapping of town name to number of included episodes.
+        weather: Mapping of weather preset name to number of included
+            episodes. Episodes with no recorded weather (schema < 1.1, or
+            unreadable metadata) are omitted, mirroring how ``towns``
+            already omits episodes with no recorded town.
         throttle: Summary statistics for the throttle signal, or None if
             ``sample_count`` is 0.
         brake: Summary statistics for the brake signal, or None.
@@ -200,6 +214,7 @@ class DatasetStatistics:
     sample_count: int
     split_counts: SplitCounts
     towns: dict[str, int]
+    weather: dict[str, int]
     throttle: ValueStats | None
     brake: ValueStats | None
     steer: ValueStats | None
@@ -264,6 +279,13 @@ class QualityReport:
             detection only; it does not detect perceptually similar but
             non-identical ("near-duplicate") frames. Purely informational
             — never affects inclusion.
+        duplicate_sample_count: Total number of samples belonging to any
+            duplicate group (``sum(len(group.sample_ids) for group in
+            duplicate_groups)``) — the fraction of the dataset affected,
+            as opposed to ``duplicate_frame_groups``' count of distinct
+            groups. Added in schema 1.1 for
+            :mod:`src.quality.dataset_metrics`'s ``duplicates`` metric
+            (docs/ADR/0004-engineering-loop-architecture.md Decision 6).
         issues: Ordered list of all :class:`QualityIssue` records.
     """
 
@@ -278,6 +300,7 @@ class QualityReport:
     episodes_truncated: int
     episodes_with_outliers: int
     duplicate_frame_groups: int
+    duplicate_sample_count: int
     issues: list[QualityIssue]
 
     def to_dict(self) -> dict[str, Any]:

@@ -86,9 +86,12 @@ def _make_png_bytes(w: int = 2, h: int = 2, fill: int = 0) -> bytes:
     return sig + ihdr + idat + iend
 
 
-def _make_metadata(episode_id: str, town: str = "Town03", route_name: str = "routeA") -> (
-    EpisodeMetadata
-):
+def _make_metadata(
+    episode_id: str,
+    town: str = "Town03",
+    route_name: str = "routeA",
+    weather: str | None = "ClearNoon",
+) -> EpisodeMetadata:
     return EpisodeMetadata(
         episode_id=episode_id,
         created_at=_FIXED_DT.isoformat(),
@@ -100,7 +103,7 @@ def _make_metadata(episode_id: str, town: str = "Town03", route_name: str = "rou
         carla_version_server=None,
         carla_version_client=None,
         town=town,
-        weather_preset=None,
+        weather_preset=weather,
         route_name=route_name,
         route_hash="a3f2b1c9",
         tick_count_target=10,
@@ -139,6 +142,7 @@ def _write_episode(
     town: str = "Town03",
     throttle: float = 0.5,
     speed_kph: float = 18.0,
+    weather: str | None = "ClearNoon",
 ) -> Path:
     """Write a fully valid, aligned Phase 2 episode directory and return its root.
 
@@ -150,7 +154,7 @@ def _write_episode(
     ep_dir = EpisodeDirectory(base_dir, episode_id)
 
     with EpisodeWriter(ep_dir) as writer:
-        writer.write_metadata(_make_metadata(episode_id, town=town))
+        writer.write_metadata(_make_metadata(episode_id, town=town, weather=weather))
         writer.write_route(_make_route(town=town))
         writer.write_event(EventRecord(
             tick=0, frame=0, timestamp_wall=time.monotonic(),
@@ -376,10 +380,12 @@ class TestStatistics:
         assert stats.speed_kph is None
         assert stats.steering_histogram == []
 
-    def _episode(self, episode_id: str, town: str, included: bool) -> EpisodeIndexEntry:
+    def _episode(
+        self, episode_id: str, town: str, included: bool, weather: str | None = "ClearNoon",
+    ) -> EpisodeIndexEntry:
         return EpisodeIndexEntry(
             episode_id=episode_id, episode_dir=f"/tmp/{episode_id}",
-            town=town, route_name="routeA", collection_mode="dry_run",
+            town=town, weather=weather, route_name="routeA", collection_mode="dry_run",
             created_at=_FIXED_DT.isoformat(),
             frame_count=2, control_row_count=2, telemetry_row_count=2,
             valid=True, validation_errors=[], aligned=True, alignment_issues=[],
@@ -420,6 +426,19 @@ class TestStatistics:
         ]
         stats = compute_statistics(episodes, [])
         assert stats.towns == {"Town01": 1}
+
+    def test_weather_counted_from_included_episodes_only(self) -> None:
+        episodes = [
+            self._episode("ep1", "Town01", included=True, weather="ClearNoon"),
+            self._episode("ep2", "Town03", included=False, weather="HardRainNoon"),
+        ]
+        stats = compute_statistics(episodes, [])
+        assert stats.weather == {"ClearNoon": 1}
+
+    def test_weather_omitted_when_not_recorded(self) -> None:
+        episodes = [self._episode("ep1", "Town01", included=True, weather=None)]
+        stats = compute_statistics(episodes, [])
+        assert stats.weather == {}
 
     def test_split_counts_tally_correctly(self) -> None:
         episodes = [self._episode("ep1", "Town03", included=True)]
@@ -593,6 +612,18 @@ class TestDatasetBuilder:
             assert (out / fname).exists()
         for split_name in ("train", "val", "test"):
             assert (out / "splits" / f"{split_name}.jsonl").exists()
+
+    def test_episode_index_records_weather_from_metadata(self, tmp_path: Path) -> None:
+        raw = tmp_path / "raw"
+        _write_episode(raw, "episode_1", ticks=3, weather="HardRainNoon")
+        out = tmp_path / "out"
+        build_dataset(raw_episodes_dir=raw, output_dir=out,
+                       split_ratios=self.RATIOS, split_seed=42)
+        rows = [json.loads(line) for line in
+                (out / "episodes_index.jsonl").read_text().splitlines() if line]
+        assert rows[0]["weather"] == "HardRainNoon"
+        stats = json.loads((out / "stats.json").read_text())
+        assert stats["weather"] == {"HardRainNoon": 1}  # 1 episode, not 3 (sample count)
 
     def test_splits_files_partition_samples_index(self, tmp_path: Path) -> None:
         raw = tmp_path / "raw"
@@ -784,6 +815,21 @@ class TestDatasetBuilder:
         assert report["duplicate_frame_groups"] > 0
         assert any(i["episode_id"] == "<dataset>" for i in report["issues"])
 
+    def test_duplicate_sample_count_sums_group_sizes_not_group_count(
+        self, tmp_path: Path,
+    ) -> None:
+        # 2 episodes x 3 overlapping ticks -> 3 duplicate groups of 2 samples
+        # each: duplicate_frame_groups == 3, duplicate_sample_count == 6.
+        raw = tmp_path / "raw"
+        _write_episode(raw, "episode_a", ticks=3)
+        _write_episode(raw, "episode_b", ticks=3)
+        out = tmp_path / "out"
+        build_dataset(raw_episodes_dir=raw, output_dir=out,
+                       split_ratios=self.RATIOS, split_seed=42)
+        report = json.loads((out / "quality_report.json").read_text())
+        assert report["duplicate_frame_groups"] == 3
+        assert report["duplicate_sample_count"] == 6
+
     def test_duplicate_detection_disabled_via_flag(self, tmp_path: Path) -> None:
         raw = tmp_path / "raw"
         _write_episode(raw, "episode_a", ticks=3)
@@ -795,6 +841,7 @@ class TestDatasetBuilder:
         assert manifest.duplicate_detection_enabled is False
         report = json.loads((out / "quality_report.json").read_text())
         assert report["duplicate_frame_groups"] == 0
+        assert report["duplicate_sample_count"] == 0
 
     def test_steering_histogram_bins_configurable(self, tmp_path: Path) -> None:
         raw = tmp_path / "raw"

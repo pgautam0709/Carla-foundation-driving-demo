@@ -47,9 +47,12 @@ def compute_statistics(
     included = [e for e in episodes if e.included]
 
     towns: dict[str, int] = {}
+    weather: dict[str, int] = {}
     for episode in included:
         if episode.town is not None:
             towns[episode.town] = towns.get(episode.town, 0) + 1
+        if episode.weather is not None:
+            weather[episode.weather] = weather.get(episode.weather, 0) + 1
 
     split_counts = SplitCounts()
     for sample in samples:
@@ -65,6 +68,7 @@ def compute_statistics(
         sample_count=len(samples),
         split_counts=split_counts,
         towns=towns,
+        weather=weather,
         throttle=_value_stats([s.throttle for s in samples]),
         brake=_value_stats([s.brake for s in samples]),
         steer=_value_stats([s.steer for s in samples]),
